@@ -1,0 +1,76 @@
+# Ejemplo de configuración SSH para OpenAI Codex
+# Ubicación sugerida: ~/.codex/ssh-config.toml
+#
+# Este archivo define servidores SSH para MCP SSH Manager.
+#
+# Para instalar el servidor MCP en Codex, agregá en config.toml:
+# [mcp_servers.ssh-manager]
+# command = "node"
+# args = ["D:/work/ssh-manager-mcp-server/src/index.js"]
+#
+# [mcp_servers.ssh-manager.env]
+# SSH_CONFIG_PATH = "C:/Users/tu-usuario/.codex/ssh-config.toml"
+
+# Servidor de producción con clave SSH (recomendado)
+[ssh_servers.production]
+host = "prod.example.com"
+user = "admin"
+key_path = "~/.ssh/id_rsa"           # Ruta a la clave privada SSH
+port = 22                             # Opcional, por defecto 22
+default_dir = "/var/www/html"         # Opcional, directorio de trabajo por defecto
+description = "Servidor web producción"
+sudo_password = "sudo_pass"           # Opcional, solo para automatización confiable
+
+# Servidor staging con contraseña
+[ssh_servers.staging]
+host = "staging.example.com"
+user = "deploy"
+password = "secure_password"          # Preferí claves SSH cuando sea posible
+port = 2222                           # Puerto SSH personalizado
+default_dir = "/home/deploy/app"
+description = "Entorno staging"
+
+# Servidor de base de datos
+[ssh_servers.db_server]
+host = "192.168.1.100"
+user = "dbadmin"
+key_path = "~/.ssh/db_key"
+port = 22
+default_dir = "/var/lib/mysql"
+description = "Servidor MySQL"
+
+# Servidor de desarrollo con configuración mínima
+[ssh_servers.dev]
+host = "dev.example.com"
+user = "developer"
+key_path = "~/.ssh/dev_key"
+
+# Host Docker
+[ssh_servers.docker_host]
+host = "docker.example.com"
+user = "docker"
+key_path = "~/.ssh/docker_key"
+default_dir = "/opt/docker"
+description = "Host de contenedores Docker"
+
+# Ejemplos de múltiples entornos
+[ssh_servers.app_prod]
+host = "app-prod.example.com"
+user = "ubuntu"
+key_path = "~/.ssh/aws_prod_key"
+default_dir = "/var/www/myapp"
+description = "Servidor app producción"
+
+[ssh_servers.app_staging]
+host = "app-staging.example.com"
+user = "ubuntu"
+key_path = "~/.ssh/aws_staging_key"
+default_dir = "/var/www/myapp"
+description = "Servidor app staging"
+
+# Notas:
+# 1. key_path es preferible a password por seguridad.
+# 2. Las rutas con ~ se expanden al directorio home.
+# 3. default_dir es opcional, pero recomendado.
+# 4. sudo_password solo debe usarse en automatización confiable.
+# 5. Los nombres de servidores no distinguen mayúsculas/minúsculas.
