@@ -55,7 +55,7 @@ Muchos clientes compatibles con MCP aceptan una sección `mcpServers`:
 }
 ```
 
-`SSH_ENV_PATH` es opcional, pero recomendado si querés que el cliente encuentre siempre el mismo archivo `.env` aunque arranque desde otro directorio.
+`SSH_ENV_PATH` es opcional, pero recomendado si querés que el cliente encuentre siempre el mismo archivo `.env` aunque arranque desde otro directorio. En esta instalación, el archivo compartido para otros CLIs es `D:/work/ssh-manager-mcp-server/.env`.
 
 ## Claude Code
 
@@ -113,6 +113,21 @@ Si tu cliente Codex usa configuración JSON estilo `mcpServers`, el equivalente 
 El archivo TOML de servidores SSH puede seguir el formato de `examples/codex-ssh-config.example.toml`.
 
 ## OpenCode y otros clientes CLI
+
+Configuración usada en esta máquina para compartir la misma lista de servidores SSH entre OpenCode y otros CLIs:
+
+```json
+{
+  "ssh-manager": {
+    "type": "local",
+    "command": ["node", "D:/work/ssh-manager-mcp-server/src/index.js"],
+    "enabled": true,
+    "environment": {
+      "SSH_ENV_PATH": "D:/work/ssh-manager-mcp-server/.env"
+    }
+  }
+}
+```
 
 Para clientes que acepten servidores MCP locales, registrá una entrada equivalente. Algunos usan `command` como string y `args` separado:
 
