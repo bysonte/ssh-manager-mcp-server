@@ -9,10 +9,10 @@ npm install
 ## 2. Crear `.env`
 
 ```env
-SSH_HOST=example.com
-SSH_USER=root
-SSH_PORT=22
-SSH_PRIVATE_KEY_PATH=C:\Users\me\.ssh\id_rsa
+SSH_SERVER_PROD_HOST=example.com
+SSH_SERVER_PROD_USER=root
+SSH_SERVER_PROD_PORT=22
+SSH_SERVER_PROD_KEYPATH=C:\Users\me\.ssh\id_rsa
 ```
 
 ## 3. Probar
@@ -39,7 +39,7 @@ Usá `node` apuntando a `src/index.js` por `stdio`:
 }
 ```
 
-Más ejemplos para Claude Code, Codex y otros clientes CLI: [docs/MCP_CLIENT_INSTALLATION.md](docs/MCP_CLIENT_INSTALLATION.md).
+Más ejemplos para Claude Code, Codex y otros clientes CLI: [docs/MCP_CLIENT_INSTALLATION.md](docs/MCP_CLIENT_INSTALLATION.md). Índice completo: [docs/README.md](docs/README.md).
 
 ## 5. Tools principales
 

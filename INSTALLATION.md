@@ -48,7 +48,7 @@ Reglas importantes:
 - El transporte es `stdio`; no hay puerto HTTP.
 - Definí `SSH_ENV_PATH` o `SSH_CONFIG_PATH` si el cliente arranca desde otro directorio.
 
-Guía por entorno CLI: [docs/MCP_CLIENT_INSTALLATION.md](docs/MCP_CLIENT_INSTALLATION.md).
+Guía por entorno CLI: [docs/MCP_CLIENT_INSTALLATION.md](docs/MCP_CLIENT_INSTALLATION.md). Índice completo: [docs/README.md](docs/README.md).
 
 ## Verificar
 

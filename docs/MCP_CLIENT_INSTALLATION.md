@@ -1,6 +1,8 @@
-# Instalación en clientes MCP por stdio
+# Instalación en clientes MCP
 
-MCP SSH Manager se ejecuta como un proceso local por `stdio`. El cliente MCP lo inicia como proceso hijo y se comunica por stdin/stdout usando JSON-RPC. No hay servidor HTTP ni puerto que exponer.
+[Documentación](README.md) | Anterior: [Índice](README.md) | Siguiente: [Gestión de tools](TOOL_MANAGEMENT.md)
+
+MCP SSH Manager se ejecuta como proceso local por `stdio`. El cliente MCP lo inicia y habla JSON-RPC por stdin/stdout. No hay servidor HTTP ni puerto.
 
 ## Requisitos
 
@@ -141,18 +143,30 @@ Otros usan `command` como array completo:
 
 Si el cliente usa otra clave para servidores MCP, mantené los mismos valores importantes: ejecutable `node`, argumento `ruta absoluta a src/index.js`, entorno SSH opcional y transporte `stdio`.
 
-## Configuración SSH mínima
+## Configuración SSH mínima `.env`
 
 Ejemplo `.env`:
 
 ```env
-SSH_HOST=example.com
-SSH_USER=root
-SSH_PORT=22
-SSH_PRIVATE_KEY_PATH=C:\Users\me\.ssh\id_rsa
+SSH_SERVER_PROD_HOST=example.com
+SSH_SERVER_PROD_USER=root
+SSH_SERVER_PROD_PORT=22
+SSH_SERVER_PROD_KEYPATH=C:\Users\me\.ssh\id_rsa
 ```
 
-Para múltiples servidores podés usar el formato `SSH_SERVER_<NOMBRE>_*` documentado en `CLAUDE.md` y `.env.example`.
+Más campos disponibles en [README](../README.md#configuración) y `.env.example`.
+
+## Configuración SSH mínima TOML
+
+```toml
+[ssh_servers.prod]
+host = "example.com"
+user = "root"
+port = 22
+key_path = "C:/Users/me/.ssh/id_rsa"
+```
+
+Usá `SSH_CONFIG_PATH` para apuntar a ese archivo. Hay un ejemplo completo en `examples/codex-ssh-config.example.toml`.
 
 ## Verificación
 
@@ -170,3 +184,5 @@ Después de configurar el cliente MCP:
 - Si no aparecen servidores SSH, definí `SSH_ENV_PATH` o `SSH_CONFIG_PATH` en `env`.
 - No uses `npm start` dentro de la configuración MCP; el cliente debe ejecutar directamente `node src/index.js`.
 - No agregues logs en stdout: el servidor usa stderr para logs y stdout queda reservado para MCP.
+
+Siguiente: [Gestión de tools](TOOL_MANAGEMENT.md).

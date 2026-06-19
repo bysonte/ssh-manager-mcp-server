@@ -1,33 +1,42 @@
 # MCP SSH Manager
 
-Servidor MCP para manejar servidores remotos por SSH desde clientes compatibles con Model Context Protocol.
+Servidor MCP local para administrar servidores SSH desde clientes compatibles con Model Context Protocol.
 
-## Qué permite hacer
+## Funciones
 
-- Ejecutar comandos SSH.
-- Subir y bajar archivos.
-- Sincronizar carpetas con rsync.
-- Crear túneles y sesiones persistentes.
-- Revisar salud del servidor, procesos y servicios.
-- Crear backups y hacer operaciones de base de datos.
-- Activar o desactivar grupos de tools para reducir contexto.
+- Ejecutar comandos remotos.
+- Subir, bajar y sincronizar archivos.
+- Abrir sesiones SSH persistentes y túneles.
+- Revisar salud, procesos, servicios y logs.
+- Crear backups y operar bases MySQL, PostgreSQL o MongoDB.
+- Desplegar archivos con backup, permisos, owner y reinicio de servicio.
+- Activar grupos de tools para reducir contexto.
 
-## Stack
+## Requisitos
 
-- Node.js ESM.
-- `@modelcontextprotocol/sdk` 1.29.0.
-- `zod` para schemas MCP.
-- `ssh2` para conexiones SSH.
-- Transporte local: `StdioServerTransport`.
+- Node.js 18 o superior.
+- `npm install` ejecutado en este repositorio.
+- Acceso SSH a los servidores configurados.
+- Opcional: `rsync`, `sshpass`, clientes de base de datos o Docker según la tool usada.
 
-## Instalación rápida
+## Inicio rápido
 
 ```powershell
 npm install
-npm run validate
+npm test
 ```
 
-Para usarlo desde un cliente MCP, configurá transporte `stdio` con Node apuntando directamente a `src/index.js`:
+Crear `.env`:
+
+```env
+SSH_SERVER_PROD_HOST=example.com
+SSH_SERVER_PROD_USER=root
+SSH_SERVER_PROD_PORT=22
+SSH_SERVER_PROD_KEYPATH=C:\Users\me\.ssh\id_rsa
+SSH_SERVER_PROD_DEFAULT_DIR=/var/www/app
+```
+
+Registrar el MCP en el cliente con `stdio`:
 
 ```json
 {
@@ -43,48 +52,76 @@ Para usarlo desde un cliente MCP, configurá transporte `stdio` con Node apuntan
 }
 ```
 
-Guía completa para Claude Code, Codex, OpenCode y otros clientes CLI: [docs/MCP_CLIENT_INSTALLATION.md](docs/MCP_CLIENT_INSTALLATION.md).
+No uses `npm start` en el cliente MCP. El cliente debe lanzar `node src/index.js` como proceso local por `stdio`.
+
+## Documentación
+
+Leé en este orden:
+
+1. [Inicio rápido](QUICKSTART.md)
+2. [Instalación](INSTALLATION.md)
+3. [Índice de documentación](docs/README.md)
+4. [Instalación en clientes MCP](docs/MCP_CLIENT_INSTALLATION.md)
+5. [Gestión de tools](docs/TOOL_MANAGEMENT.md)
+6. [Modos de seguridad](docs/SECURITY_MODES.md)
+7. [Deploy](docs/DEPLOYMENT_GUIDE.md)
+8. [Backups](docs/BACKUP_GUIDE.md)
+9. [Alias y hooks](docs/ALIASES_AND_HOOKS.md)
 
 ## Configuración
 
-El servidor busca configuración en este orden:
-
-1. `SSH_ENV_PATH` si está definido.
-2. `%USERPROFILE%\.ssh-manager\.env`.
-3. `.env` del directorio actual.
-4. `%USERPROFILE%\.env`.
-5. `.env` junto al proyecto.
-
-Ejemplo mínimo:
+El `.env` usa este formato:
 
 ```env
-SSH_HOST=example.com
-SSH_USER=root
-SSH_PORT=22
-SSH_PRIVATE_KEY_PATH=C:\Users\me\.ssh\id_rsa
+SSH_SERVER_<NOMBRE>_HOST=hostname
+SSH_SERVER_<NOMBRE>_USER=username
+SSH_SERVER_<NOMBRE>_PASSWORD=password
+SSH_SERVER_<NOMBRE>_KEYPATH=~/.ssh/id_rsa
+SSH_SERVER_<NOMBRE>_PORT=22
+SSH_SERVER_<NOMBRE>_DEFAULT_DIR=/path
+SSH_SERVER_<NOMBRE>_SUDO_PASSWORD=password
+SSH_SERVER_<NOMBRE>_PLATFORM=linux
+SSH_SERVER_<NOMBRE>_MODE=unrestricted
 ```
 
-## Scripts útiles
+Campos útiles:
+
+- `PASSWORD` o `KEYPATH`: autenticación SSH.
+- `PASSPHRASE`: passphrase de la clave.
+- `DEFAULT_DIR`: directorio usado cuando la tool no recibe `cwd`.
+- `PLATFORM`: `linux` por defecto, `windows` para OpenSSH en Windows.
+- `PROXYJUMP` o `PROXYCOMMAND`: salto SSH o comando proxy.
+- `MODE`, `ALLOW_PATTERNS`, `DENY_PATTERNS`, `AUDIT_LOG`: política por servidor.
+
+También se puede usar TOML con `SSH_CONFIG_PATH`. Ver [Instalación en clientes MCP](docs/MCP_CLIENT_INSTALLATION.md).
+
+## Rutas de configuración
+
+Orden para `.env`:
+
+1. `SSH_ENV_PATH`
+2. `%USERPROFILE%\.ssh-manager\.env`
+3. `.env` del directorio actual
+4. `%USERPROFILE%\.env`
+5. `.env` junto al proyecto
+
+TOML se carga desde `SSH_CONFIG_PATH` o `~/.codex/ssh-config.toml`.
+
+## Desarrollo
 
 ```powershell
 npm test
 npm run lint
 npm run coverage
 npm run validate
+npx knip
 ```
 
-`npm run coverage` usa `c8` y exige 85% global. Hoy existe deuda previa de cobertura en módulos grandes; el script queda listo y falla si no se alcanza el umbral.
-
-## Integración continua
-
-GitHub Actions ejecuta instalación reproducible con `npm ci` cuando existe `package-lock.json`, además de `npm run lint`, `npm test`, `npm run coverage` y `npx knip` en cada `push` y `pull_request` con Node.js 20.x y 22.x. El workflow está en `.github/workflows/ci.yml`.
-
-## Estado de documentación
-
-La documentación principal está en español. `CHANGELOG.md` queda en inglés porque es histórico de versiones pasadas.
+`npm run validate` ejecuta lint, tests y cobertura. La cobertura global exige 85% para el código incluido por `c8`.
 
 ## Seguridad
 
-- Los errores de tools MCP se devuelven con `isError: true`.
-- Los comandos generados para backups, bases de datos y deploy escapan argumentos de shell.
-- No guardes secretos en el repositorio. Usá `.env` local.
+- No commitees `.env`, claves ni passwords.
+- Preferí claves SSH antes que password.
+- Usá `readonly` o `restricted` en servidores sensibles.
+- Revisá [Modos de seguridad](docs/SECURITY_MODES.md) antes de habilitar tools destructivas.

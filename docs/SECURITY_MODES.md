@@ -1,17 +1,53 @@
 # Modos de seguridad
 
-## unrestricted
+[Documentación](README.md) | Anterior: [Gestión de tools](TOOL_MANAGEMENT.md) | Siguiente: [Deploy](DEPLOYMENT_GUIDE.md)
 
-Permite ejecutar tools sin restricciones extra. Es el modo compatible con versiones anteriores.
+La política se define por servidor. El modo por defecto es `unrestricted`.
 
-## readonly
+## `unrestricted`
 
-Bloquea acciones que cambian el servidor, como uploads, deploys, backups, imports y comandos destructivos.
+Sin restricciones extra. Mantiene el comportamiento normal.
 
-## restricted
+```env
+SSH_SERVER_PROD_MODE=unrestricted
+```
 
-Solo permite comandos que coinciden con patrones permitidos. Los patrones de denegación tienen prioridad.
+## `readonly`
+
+Bloquea tools que mutan estado remoto y rechaza comandos destructivos conocidos en `ssh_execute`, `ssh_execute_group` y `ssh_session_send`.
+
+```env
+SSH_SERVER_PROD_MODE=readonly
+```
+
+Bloquea, entre otras: `ssh_upload`, `ssh_sync`, `ssh_deploy`, `ssh_execute_sudo`, backups que escriben, imports de DB, dumps remotos, cambios de host keys, alertas `set` y `process_manager kill`.
+
+## `restricted`
+
+Exige allowlist por regex para comandos. `DENY_PATTERNS` siempre gana.
+
+```env
+SSH_SERVER_PROD_MODE=restricted
+SSH_SERVER_PROD_ALLOW_PATTERNS="^pwd$;^ls( |$);^systemctl status "
+SSH_SERVER_PROD_DENY_PATTERNS="rm -rf;shutdown;reboot"
+```
+
+Si `ALLOW_PATTERNS` está vacío, todo comando queda rechazado.
+
+## TOML
+
+```toml
+[ssh_servers.prod]
+host = "example.com"
+user = "root"
+mode = "restricted"
+allow_patterns = ["^pwd$", "^ls( |$)"]
+deny_patterns = ["rm -rf", "shutdown"]
+audit_log = "/var/log/ssh-manager-audit.jsonl"
+```
 
 ## Auditoría
 
-Si `AUDIT_LOG` está configurado, se escriben eventos JSONL con secretos redactados.
+Configurá `SSH_SERVER_<NOMBRE>_AUDIT_LOG` o `audit_log`. Se escriben eventos JSONL con secretos redactados.
+
+Siguiente: [Deploy](DEPLOYMENT_GUIDE.md).

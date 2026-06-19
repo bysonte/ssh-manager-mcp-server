@@ -25,4 +25,4 @@ El umbral configurado es 85% global. Si una mejora toca código sin cobertura, a
 
 ## Documentación
 
-La documentación principal debe mantenerse en español. `CHANGELOG.md` puede seguir en inglés porque es histórico.
+La documentación principal debe mantenerse en español, directa y enlazada desde [docs/README.md](docs/README.md).
