@@ -215,7 +215,7 @@ Antes de publicar cambios ejecutar:
 - `npm run validate`
 - `npx knip`
 
-GitHub Actions ejecuta lint, tests, coverage y knip en cada `push` y `pull_request` con Node.js 20.x y 22.x. Ver `.github/workflows/ci.yml`.
+GitHub Actions ejecuta instalación de dependencias, lint, tests, coverage y knip en cada `push` y `pull_request` con Node.js 20.x y 22.x. Usa `npm ci` cuando `package-lock.json` está presente. Ver `.github/workflows/ci.yml`.
 
 ## Integración con Claude Code
 

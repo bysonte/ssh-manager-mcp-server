@@ -77,7 +77,7 @@ npm run validate
 
 ## Integración continua
 
-GitHub Actions ejecuta `npm ci`, `npm run lint`, `npm test`, `npm run coverage` y `npx knip` en cada `push` y `pull_request` con Node.js 20.x y 22.x. El workflow está en `.github/workflows/ci.yml`.
+GitHub Actions ejecuta instalación reproducible con `npm ci` cuando existe `package-lock.json`, además de `npm run lint`, `npm test`, `npm run coverage` y `npx knip` en cada `push` y `pull_request` con Node.js 20.x y 22.x. El workflow está en `.github/workflows/ci.yml`.
 
 ## Estado de documentación
 
