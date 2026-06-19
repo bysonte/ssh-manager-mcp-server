@@ -9,17 +9,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
-.venv
-
 # IDE
 .vscode/
 .idea/
@@ -35,12 +24,10 @@ logs/
 # Testing
 coverage/
 .nyc_output/
-.pytest_cache/
 
 # Build
 dist/
 build/
-*.egg-info/
 
 # Temporary files
 tmp/
