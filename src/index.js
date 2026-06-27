@@ -141,6 +141,7 @@ import { loadToolConfig, isToolEnabled } from './tool-config-manager.js';
 import { evaluatePolicy } from './policy.js';
 import { auditLog } from './audit.js';
 import { normalizeToolResult, toolErrorResponse } from './mcp-response.js';
+import { writeServerConfig } from './server-writer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -4835,6 +4836,169 @@ registerToolConditional(
         ]
       };
     }
+  }
+);
+
+// Add a new SSH server to the config file and make it immediately available
+registerToolConditional(
+  'ssh_add_server',
+  {
+    description: 'Adds a new SSH server to the configuration without restarting the MCP server. Supports password and key-based authentication. When copy_key is true, connects to the server with a password to install the local public SSH key (default ~/.ssh/id_rsa.pub) into the remote authorized_keys file — the Windows-compatible approach. When test_connection is true (default), verifies the connection works before returning. The server name must start with a letter and contain only letters, numbers, and underscores.',
+    inputSchema: {
+      name: z.string().describe('Server name identifier (letters, numbers, underscores; must start with a letter)'),
+      host: z.string().describe('Hostname or IP address of the SSH server'),
+      user: z.string().optional().describe('SSH username (default: root)'),
+      port: z.number().optional().describe('SSH port (default: 22)'),
+      auth: z.enum(['password', 'key']).describe('Authentication method to save in config: password or key'),
+      password: z.string().optional().describe('SSH password (required if auth=password; also required for copy_key to make the initial connection)'),
+      key_path: z.string().optional().describe('Path to the SSH private key file (required if auth=key and copy_key is false)'),
+      passphrase: z.string().optional().describe('Passphrase for the private key (optional)'),
+      default_dir: z.string().optional().describe('Default working directory on the remote server'),
+      description: z.string().optional().describe('Human-readable description of the server'),
+      copy_key: z.boolean().optional().describe('Copy the local public SSH key to the server authorized_keys (requires password for the initial connection; default: false)'),
+      public_key_path: z.string().optional().describe('Path to the local public key to install (default: ~/.ssh/id_rsa.pub)'),
+      test_connection: z.boolean().optional().describe('Test the connection after adding (default: true)'),
+    }
+  },
+  async ({ name, host, user = 'root', port = 22, auth, password, key_path, passphrase, default_dir, description, copy_key = false, public_key_path, test_connection = true }) => {
+    // Validate server name
+    if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(name)) {
+      return {
+        content: [{ type: 'text', text: formatJSONResponse({ success: false, error: `Invalid server name "${name}". Use only letters, numbers, and underscores, starting with a letter.` }) }],
+        isError: true
+      };
+    }
+
+    // Validate required fields
+    if (auth === 'password' && !password) {
+      return {
+        content: [{ type: 'text', text: formatJSONResponse({ success: false, error: 'password is required when auth=password' }) }],
+        isError: true
+      };
+    }
+    if (auth === 'key' && !copy_key && !key_path) {
+      return {
+        content: [{ type: 'text', text: formatJSONResponse({ success: false, error: 'key_path is required when auth=key and copy_key is false' }) }],
+        isError: true
+      };
+    }
+    if (copy_key && !password) {
+      return {
+        content: [{ type: 'text', text: formatJSONResponse({ success: false, error: 'password is required for copy_key to make the initial connection' }) }],
+        isError: true
+      };
+    }
+
+    // Check for duplicate
+    const existingServers = await loadServerConfig();
+    if (existingServers[name.toLowerCase()]) {
+      return {
+        content: [{ type: 'text', text: formatJSONResponse({ success: false, error: `Server "${name}" already exists. Choose a different name or remove it first.` }) }],
+        isError: true
+      };
+    }
+
+    let copyKeyResult = null;
+
+    // Copy local public key to remote authorized_keys
+    if (copy_key) {
+      const resolvedPubKeyPath = (public_key_path || path.join(os.homedir(), '.ssh', 'id_rsa.pub'))
+        .replace(/^~(?=[/\\]|$)/, os.homedir());
+
+      if (!fs.existsSync(resolvedPubKeyPath)) {
+        return {
+          content: [{ type: 'text', text: formatJSONResponse({ success: false, error: `Public key file not found: ${resolvedPubKeyPath}` }) }],
+          isError: true
+        };
+      }
+
+      const pubKeyContent = fs.readFileSync(resolvedPubKeyPath, 'utf8').trim();
+      // Shell single-quote escaping: '\x27' = ' and '\x5c' = \, so '\x27\x5c\x27\x27' = '\''
+      const escapedKey = `'${pubKeyContent.replace(/'/g, '\x27\x5c\x27\x27')}'`;
+      const installCmd =
+        `mkdir -p ~/.ssh && chmod 700 ~/.ssh && printf '%s\\n' ${escapedKey} >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys`;
+
+      const tempSsh = new SSHManager({ host, user, port, password, autoAcceptHostKey: true });
+      try {
+        await tempSsh.connect();
+        const result = await tempSsh.execCommand(installCmd, { timeout: 30000 });
+        if (result.code !== 0) {
+          throw new Error(result.stderr || result.stdout || 'unknown error');
+        }
+        copyKeyResult = { success: true, message: `Public key from ${resolvedPubKeyPath} installed on ${host}` };
+      } catch (error) {
+        return {
+          content: [{ type: 'text', text: formatJSONResponse({ success: false, error: `Failed to copy SSH key: ${error.message}` }) }],
+          isError: true
+        };
+      } finally {
+        tempSsh.dispose();
+      }
+    }
+
+    // Build config object for writing
+    const resolvedKeyPath = auth === 'key'
+      ? (key_path || (copy_key ? path.join(os.homedir(), '.ssh', 'id_rsa') : undefined))
+      : undefined;
+
+    const serverConfig = {
+      name: name.toLowerCase(),
+      host,
+      user,
+      port,
+      password: auth === 'password' ? password : undefined,
+      keyPath: resolvedKeyPath,
+      passphrase,
+      defaultDir: default_dir,
+      description
+    };
+
+    let writeResult;
+    try {
+      writeResult = writeServerConfig(serverConfig, {
+        envPath: envFilePath,
+        tomlPath: getRuntimeEnv('SSH_CONFIG_PATH') || path.join(os.homedir(), '.codex', 'ssh-config.toml'),
+        preferToml: getRuntimeEnv('PREFER_TOML_CONFIG') === 'true'
+      });
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: formatJSONResponse({ success: false, error: `Failed to write server config: ${error.message}` }) }],
+        isError: true
+      };
+    }
+
+    // Reload so the server is immediately available without restart
+    await serverConfigManager.reload();
+
+    // Optionally test the connection
+    let testResult = null;
+    if (test_connection) {
+      try {
+        const ssh = await getConnection(name.toLowerCase());
+        const result = await ssh.execCommand('echo "connection_ok"', { timeout: 15000 });
+        testResult = { success: result.code === 0, output: result.stdout.trim() };
+      } catch (error) {
+        testResult = { success: false, error: error.message };
+      }
+    }
+
+    return {
+      content: [{
+        type: 'text',
+        text: formatJSONResponse({
+          success: true,
+          name: name.toLowerCase(),
+          host,
+          user,
+          port,
+          auth_method: auth,
+          config_file: writeResult.filePath,
+          copy_key: copyKeyResult,
+          test_connection: testResult,
+          message: `Server "${name.toLowerCase()}" added successfully`
+        })
+      }]
+    };
   }
 );
 

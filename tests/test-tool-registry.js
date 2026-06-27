@@ -53,16 +53,16 @@ function assertTrue(condition, message) {
 console.log('\n' + YELLOW + 'Running Tool Registry Tests...' + NC + '\n');
 
 // Test 1: All tools are accounted for
-test('All 37 tools are defined in groups', () => {
+test('All 38 tools are defined in groups', () => {
   const allTools = getAllTools();
-  assertEqual(allTools.length, 37, 'Should have exactly 37 tools');
+  assertEqual(allTools.length, 38, 'Should have exactly 38 tools');
 });
 
 // Test 2: No duplicate tools
 test('No duplicate tools across groups', () => {
   const allTools = getAllTools();
   const uniqueTools = new Set(allTools);
-  assertEqual(uniqueTools.size, 37, 'All 37 tools should be unique');
+  assertEqual(uniqueTools.size, 38, 'All 38 tools should be unique');
 });
 
 // Test 3: Tool group counts are correct
@@ -105,7 +105,7 @@ test('getGroupTools returns correct tools', () => {
   assertTrue(coreTools.includes('ssh_execute'), 'Core should include ssh_execute');
 
   const advancedTools = getGroupTools('advanced');
-  assertEqual(advancedTools.length, 14, 'Advanced group should have 14 tools');
+  assertEqual(advancedTools.length, 15, 'Advanced group should have 15 tools');
 
   const missingTools = getGroupTools('missing-group');
   assertEqual(missingTools.length, 0, 'Unknown groups should return an empty list');
@@ -133,7 +133,7 @@ test('verifyIntegrity returns valid', () => {
 test('getToolStats returns correct statistics', () => {
   const stats = getToolStats();
   assertEqual(stats.totalGroups, 6, 'Should have 6 groups');
-  assertEqual(stats.totalTools, 37, 'Should have 37 total tools');
+  assertEqual(stats.totalTools, 38, 'Should have 38 total tools');
   assertEqual(stats.groups.length, 6, 'Should have 6 group entries');
 });
 
@@ -156,8 +156,8 @@ test('validateToolRegistry identifies correct tools', () => {
   assertTrue(validation.valid, 'Validation should pass for all tools');
   assertEqual(validation.missing.length, 0, 'Should have no missing tools');
   assertEqual(validation.unexpected.length, 0, 'Should have no unexpected tools');
-  assertEqual(validation.total, 37, 'Should expect 37 tools');
-  assertEqual(validation.registered, 37, 'Should register 37 tools');
+  assertEqual(validation.total, 38, 'Should expect 38 tools');
+  assertEqual(validation.registered, 38, 'Should register 38 tools');
 });
 
 // Test 12: validateToolRegistry catches missing tools
@@ -177,7 +177,7 @@ test('Group sizes match specifications', () => {
   assertEqual(TOOL_GROUPS.monitoring.length, 6, 'Monitoring should have 6 tools');
   assertEqual(TOOL_GROUPS.backup.length, 4, 'Backup should have 4 tools');
   assertEqual(TOOL_GROUPS.database.length, 4, 'Database should have 4 tools');
-  assertEqual(TOOL_GROUPS.advanced.length, 14, 'Advanced should have 14 tools');
+  assertEqual(TOOL_GROUPS.advanced.length, 15, 'Advanced should have 15 tools');
 });
 
 // Summary

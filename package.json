@@ -10,7 +10,7 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "test": "npm run test:profiles && npm run test:aliases && npm run test:hooks && npm run test:tools && npm run test:policy && npm run test:ping && npm run test:config && npm run test:lifecycle && npm run test:sync && npm run test:mcp-response && npm run test:shell-escaping && npm run test:managers",
+    "test": "npm run test:profiles && npm run test:aliases && npm run test:hooks && npm run test:tools && npm run test:policy && npm run test:ping && npm run test:config && npm run test:lifecycle && npm run test:sync && npm run test:mcp-response && npm run test:shell-escaping && npm run test:managers && npm run test:server-writer",
     "test:profiles": "node tests/test-profiles.js",
     "test:aliases": "node tests/test-command-aliases.js",
     "test:hooks": "node tests/test-hooks.js",
@@ -23,6 +23,7 @@
     "test:mcp-response": "node tests/test-mcp-response.js",
     "test:shell-escaping": "node tests/test-shell-escaping.js",
     "test:managers": "node tests/test-managers.js",
+    "test:server-writer": "node tests/test-server-writer.js",
     "coverage:report": "c8 npm test",
     "coverage": "c8 --check-coverage --lines 85 --functions 85 --branches 85 --statements 85 npm test",
     "test:all": "npm test && npm run lint && npm run coverage",

@@ -53,11 +53,12 @@ export const TOOL_GROUPS = {
     'ssh_db_query'
   ],
 
-  // Advanced group (14 tools) - Advanced features
+  // Advanced group (15 tools) - Advanced features
   advanced: [
     'ssh_deploy',
     'ssh_execute_sudo',
     'ssh_alias',
+    'ssh_add_server',
     'ssh_command_alias',
     'ssh_hooks',
     'ssh_profile',
@@ -81,7 +82,7 @@ export const TOOL_GROUP_DESCRIPTIONS = {
   monitoring: 'System health checks, service monitoring, process management, and alerts',
   backup: 'Automated backup and restore for databases and files',
   database: 'Database operations (MySQL, PostgreSQL, MongoDB)',
-  advanced: 'Advanced features (deployment, sudo, tunnels, groups, aliases, hooks, profiles)'
+  advanced: 'Advanced features (deployment, sudo, tunnels, groups, aliases, hooks, profiles, server management)'
 };
 
 /**
@@ -93,7 +94,7 @@ export const TOOL_GROUP_COUNTS = {
   monitoring: 6,
   backup: 4,
   database: 4,
-  advanced: 14
+  advanced: 15
 };
 
 /**

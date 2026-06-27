@@ -224,4 +224,20 @@ Instalación en Claude Code:
 claude mcp add ssh-manager node D:/work/ssh-manager-mcp-server/src/index.js
 ```
 
-La configuración queda en el archivo de configuración MCP de Claude Code. Si el cliente no encuentra servidores SSH, agregá `SSH_ENV_PATH` en la configuración MCP.
+La configuración queda en `~/.claude.json`. **Siempre incluir `SSH_ENV_PATH`** apuntando al `.env` del proyecto, de lo contrario el servidor carga `~/.ssh-manager/.env` (prioridad #2 en el fallback chain) y los servidores agregados al `.env` del proyecto no aparecen.
+
+Configuración correcta en `~/.claude.json`:
+```json
+"ssh-manager": {
+  "type": "stdio",
+  "command": "node",
+  "args": ["D:\\work\\ssh-manager-mcp-server\\src\\index.js"],
+  "env": {
+    "SSH_ENV_PATH": "D:\\work\\ssh-manager-mcp-server\\.env"
+  }
+}
+```
+
+### Dónde editar los servidores
+
+El archivo de referencia es `D:/work/ssh-manager-mcp-server/.env`. No editar `~/.ssh-manager/.env` directamente — ese archivo existe por compatibilidad con el CLI pero el MCP lo ignorará cuando `SSH_ENV_PATH` está configurado.
