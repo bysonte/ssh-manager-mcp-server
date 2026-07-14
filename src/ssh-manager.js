@@ -1,7 +1,8 @@
 import { Client } from 'ssh2';
 import fs from 'fs';
 import os from 'os';
-import { isHostKnown, addHostKey } from './ssh-key-manager.js';
+import { getKnownHostKeyHashes } from './ssh-key-manager.js';
+import { OUTPUT_LIMITS } from './config.js';
 import { logger } from './logger.js';
 
 // Validate liveness-probe output across shells (bash, cmd.exe, PowerShell).
@@ -27,8 +28,6 @@ class SSHManager {
     this.connected = false;
     this.sftp = null;
     this.cachedHomeDir = null;
-    this.autoAcceptHostKey = config.autoAcceptHostKey || false;
-    this.hostKeyVerification = config.hostKeyVerification !== false; // Default true
     this.jumpConnection = null;
   }
 
@@ -66,8 +65,6 @@ class SSHManager {
             'diffie-hellman-group16-sha512',
             'diffie-hellman-group15-sha512',
             'diffie-hellman-group14-sha256',
-            'diffie-hellman-group-exchange-sha1',
-            'diffie-hellman-group14-sha1',
           ],
           cipher: [
             'aes128-gcm@openssh.com',
@@ -77,9 +74,6 @@ class SSHManager {
             'aes256-ctr',
             'aes128-gcm',
             'aes256-gcm',
-            'aes128-cbc',
-            'aes192-cbc',
-            'aes256-cbc',
           ],
           serverHostKey: [
             'ecdsa-sha2-nistp256',
@@ -88,15 +82,12 @@ class SSHManager {
             'rsa-sha2-512',
             'rsa-sha2-256',
             'ssh-ed25519',
-            'ssh-rsa',
           ],
           hmac: [
             'hmac-sha2-256-etm@openssh.com',
             'hmac-sha2-512-etm@openssh.com',
-            'hmac-sha1-etm@openssh.com',
             'hmac-sha2-256',
             'hmac-sha2-512',
-            'hmac-sha1',
           ],
         },
         debug: (info) => {
@@ -106,48 +97,18 @@ class SSHManager {
         }
       };
 
-      // Add host key verification callback if enabled
-      if (this.hostKeyVerification) {
-        connConfig.hostVerifier = () => {
-          const port = this.config.port || 22;
-          const host = this.config.host;
-
-          // Check if host is already known
-          if (isHostKnown(host, port)) {
-            // For now, accept all known hosts
-            // TODO: Implement proper fingerprint comparison once we understand SSH2's hash format
-            logger.info('Host key verified', { host, port });
-            return true;
-          }
-
-          // Host is not known
-          logger.info('New host detected', { host, port });
-
-          // If autoAcceptHostKey is enabled, accept and add the key
-          if (this.autoAcceptHostKey) {
-            logger.info('Auto-accept host key', { host, port });
-            // Schedule key addition after connection
-            setImmediate(async () => {
-              try {
-                await addHostKey(host, port);
-                logger.info('Host key added', { host, port });
-              } catch (err) {
-                logger.warn('Failed to add host key', {
-                  host,
-                  port,
-                  error: err.message
-                });
-              }
-            });
-            return true;
-          }
-
-          // For backward compatibility, accept new hosts by default
-          // In production, you might want to prompt the user or check a whitelist
-          logger.warn('Auto-accepting new host', { host, port });
-          return true;
-        };
-      }
+      // Pin the key presented during this handshake to known_hosts. ssh2 hashes
+      // the raw key before invoking the verifier, so no network keyscan is used.
+      connConfig.hostHash = 'sha256';
+      connConfig.hostVerifier = (presentedHash) => {
+        const port = this.config.port || 22;
+        const knownHashes = getKnownHostKeyHashes(this.config.host, port);
+        const verified = knownHashes.includes(presentedHash);
+        if (!verified) {
+          logger.warn('SSH host key rejected', { host: this.config.host, port });
+        }
+        return verified;
+      };
 
       // Use ssh-agent if available (handles passphrase-protected keys transparently)
       if (process.env.SSH_AUTH_SOCK) {
@@ -186,6 +147,8 @@ class SSHManager {
     return new Promise((resolve, reject) => {
       let stdout = '';
       let stderr = '';
+      let stdoutTruncated = false;
+      let stderrTruncated = false;
       let completed = false;
       let stream = null;
       let timeoutId = null;
@@ -235,8 +198,10 @@ class SSHManager {
             completed = true;
             if (timeoutId) clearTimeout(timeoutId);
             resolve({
-              stdout,
-              stderr,
+              stdout: stdout + (stdoutTruncated ? '\n\n... [output truncated]' : ''),
+              stderr: stderr + (stderrTruncated ? '\n\n... [output truncated]' : ''),
+              stdoutTruncated,
+              stderrTruncated,
               code: code || 0,
               signal
             });
@@ -244,11 +209,17 @@ class SSHManager {
         });
 
         stream.on('data', (data) => {
-          stdout += data.toString();
+          if (stdout.length < OUTPUT_LIMITS.MAX_OUTPUT_LENGTH) {
+            stdout += data.toString().slice(0, OUTPUT_LIMITS.MAX_OUTPUT_LENGTH - stdout.length);
+          }
+          stdoutTruncated ||= data.length + stdout.length > OUTPUT_LIMITS.MAX_OUTPUT_LENGTH;
         });
 
         stream.stderr.on('data', (data) => {
-          stderr += data.toString();
+          if (stderr.length < OUTPUT_LIMITS.MAX_OUTPUT_LENGTH) {
+            stderr += data.toString().slice(0, OUTPUT_LIMITS.MAX_OUTPUT_LENGTH - stderr.length);
+          }
+          stderrTruncated ||= data.length + stderr.length > OUTPUT_LIMITS.MAX_OUTPUT_LENGTH;
         });
 
         stream.on('error', (err) => {
@@ -518,6 +489,32 @@ class SSHManager {
         else resolve(stream);
       });
     });
+  }
+
+  async forwardIn(bindAddr, bindPort) {
+    if (!this.connected) {
+      throw new Error('Not connected to SSH server');
+    }
+    return new Promise((resolve, reject) => {
+      this.client.forwardIn(bindAddr, bindPort, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+
+  async unforwardIn(bindAddr, bindPort) {
+    return new Promise((resolve, reject) => {
+      this.client.unforwardIn(bindAddr, bindPort, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+
+  on(event, listener) {
+    this.client.on(event, listener);
+    return this;
   }
 
   async ping() {

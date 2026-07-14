@@ -4,6 +4,7 @@
  */
 
 import { logger } from './logger.js';
+import { shellArg } from './shell-escape.js';
 
 // Health status levels
 export const HEALTH_STATUS = {
@@ -169,17 +170,20 @@ function determineOverallHealth(cpu, memory, disks) {
  * Build command to check service status (systemd or sysv)
  */
 export function buildServiceStatusCommand(serviceName) {
+  if (!/^[A-Za-z0-9@_.-]+$/.test(serviceName)) {
+    throw new Error('Invalid service name');
+  }
   // Try systemd first, fallback to sysv
   return `
     if command -v systemctl >/dev/null 2>&1; then
-      systemctl is-active ${serviceName} 2>/dev/null >/dev/null && echo "ACTIVE" || echo "INACTIVE"
-      systemctl is-enabled ${serviceName} 2>/dev/null >/dev/null && echo "ENABLED" || echo "DISABLED"
-      systemctl status ${serviceName} 2>/dev/null | grep "Main PID" | awk '{print $3}' | cut -d'(' -f1
-      systemctl status ${serviceName} 2>/dev/null | grep "Active:" | sed 's/.*Active: //' | awk '{print $1,$2,$3}'
+       systemctl is-active ${shellArg(serviceName)} 2>/dev/null >/dev/null && echo "ACTIVE" || echo "INACTIVE"
+       systemctl is-enabled ${shellArg(serviceName)} 2>/dev/null >/dev/null && echo "ENABLED" || echo "DISABLED"
+       systemctl status ${shellArg(serviceName)} 2>/dev/null | grep "Main PID" | awk '{print $3}' | cut -d'(' -f1
+       systemctl status ${shellArg(serviceName)} 2>/dev/null | grep "Active:" | sed 's/.*Active: //' | awk '{print $1,$2,$3}'
     elif command -v service >/dev/null 2>&1; then
-      service ${serviceName} status >/dev/null 2>&1 && echo "ACTIVE" || echo "INACTIVE"
+       service ${shellArg(serviceName)} status >/dev/null 2>&1 && echo "ACTIVE" || echo "INACTIVE"
       echo "UNKNOWN"
-      pgrep -f ${serviceName} | head -1 || echo ""
+       pgrep -f -- ${shellArg(serviceName)} | head -1 || echo ""
       echo "sysv"
     else
       echo "UNKNOWN"
@@ -218,10 +222,11 @@ export function buildProcessListCommand(options = {}) {
   } = options;
 
   let sortFlag = sortBy === 'memory' ? '-m' : '-c';  // -c for CPU, -m for memory
-  let command = `ps aux --sort=${sortFlag === '-c' ? '-pcpu' : '-pmem'} | head -n ${limit + 1}`;
+  const safeLimit = Math.max(1, Math.min(Number.isInteger(limit) ? limit : 20, 100));
+  let command = `ps aux --sort=${sortFlag === '-c' ? '-pcpu' : '-pmem'} | head -n ${safeLimit + 1}`;
 
   if (filter) {
-    command += ` | grep -i "${filter}"`;
+    command += ` | grep -i -- ${shellArg(filter)}`;
   }
 
   // Format output as JSON-like structure

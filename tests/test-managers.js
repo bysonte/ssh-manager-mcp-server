@@ -18,8 +18,13 @@ import {
   listKnownHosts,
   detectSSHKeyError,
   extractHostFromSSHError,
-  addHostKey
+  addHostKey,
+  setKnownHostsPathForTesting
 } from '../src/ssh-key-manager.js';
+
+const testKnownHostsDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-ssh-known-hosts-'));
+const testKnownHostsPath = path.join(testKnownHostsDirectory, 'known_hosts');
+setKnownHostsPathForTesting(testKnownHostsPath);
 
 const GREEN = '\x1b[32m';
 const RED = '\x1b[31m';
@@ -98,10 +103,12 @@ register('database manager builds safe database commands', () => {
   assertIncludes(db.buildMongoDBListCollectionsCommand({ database: 'app' }), 'getCollectionNames');
   assertIncludes(db.buildMySQLQueryCommand({ database: 'app', query: 'SELECT * FROM users' }), 'mysql');
   assertIncludes(db.buildPostgreSQLQueryCommand({ database: 'app', query: 'select 1' }), 'psql');
-  assertIncludes(db.buildMongoDBQueryCommand({ database: 'app', collection: 'users', query: '{active:true}' }), 'find');
+  assertIncludes(db.buildMongoDBQueryCommand({ database: 'app', collection: 'users', query: '{"active":true}' }), 'find');
   assert.throws(() => db.buildMySQLQueryCommand({ database: 'app', query: 'DELETE FROM users' }), /Only SELECT/);
   assert.strictEqual(db.isSafeQuery(' select name from users '), true);
   assert.strictEqual(db.isSafeQuery('select * from users; drop table users'), false);
+  assert.strictEqual(db.isSafeQuery('select * into outfile \'/tmp/users\' from users'), false);
+  assert.throws(() => db.buildMongoDBQueryCommand({ database: 'app', collection: 'users', query: '{active:true}' }), /valid JSON/);
   assert.deepStrictEqual(db.parseDatabaseList('mysql\napp\nsys\n', db.DB_TYPES.MYSQL), ['app']);
   assert.deepStrictEqual(db.parseTableList('users\norders\n'), ['users', 'orders']);
   assert.strictEqual(db.parseSize('abc'), 0);
@@ -109,11 +116,11 @@ register('database manager builds safe database commands', () => {
 });
 
 register('health monitor parses checks and validates process commands', () => {
-  assertIncludes(health.buildServiceStatusCommand('nginx'), 'systemctl is-active nginx');
+  assertIncludes(health.buildServiceStatusCommand('nginx'), 'systemctl is-active \'nginx\'');
   assert.deepStrictEqual(health.parseServiceStatus('ACTIVE\nENABLED\n123\nrunning', 'nginx'), {
     name: 'nginx', status: 'running', enabled: 'yes', pid: 123, details: 'running', health: health.HEALTH_STATUS.HEALTHY
   });
-  assertIncludes(health.buildProcessListCommand({ sortBy: 'memory', limit: 5, filter: 'node' }), 'grep -i "node"');
+  assertIncludes(health.buildProcessListCommand({ sortBy: 'memory', limit: 5, filter: 'node' }), 'grep -i -- \'node\'');
   assert.deepStrictEqual(health.parseProcessList('{"pid":1,"command":"init"}\nnot-json'), [{ pid: 1, command: 'init' }]);
   assert.strictEqual(health.buildKillProcessCommand(42, 'KILL'), 'kill -KILL 42');
   assert.throws(() => health.buildKillProcessCommand(0), /Invalid PID/);
@@ -201,8 +208,8 @@ register('tunnel manager validates config and lists mocked tunnels', async () =>
   await assert.rejects(() => tunnels.createTunnel('s', {}, { type: 'local', localPort: 1234 }), /Remote host/);
   await assert.rejects(() => tunnels.createTunnel('s', {}, { type: 'dynamic' }), /Local port/);
   const ssh = {
-    forwardIn: (_host, _port, cb) => cb(null),
-    unforwardIn: () => {},
+    forwardIn: async () => {},
+    unforwardIn: async () => {},
     on: () => {}
   };
   const tunnel = await tunnels.createTunnel('server-a', ssh, { type: 'remote', localHost: '127.0.0.1', localPort: 8080, remoteHost: '0.0.0.0', remotePort: 9000 });
@@ -258,8 +265,6 @@ register('ssh manager methods use mocked client and sftp only', async () => {
 
 register('ssh key manager reads local known_hosts safely', async () => {
   const key = Buffer.from('fake-key').toString('base64');
-  const knownHostsPath = path.join(os.homedir(), '.ssh', 'known_hosts');
-  const originalKnownHosts = fs.existsSync(knownHostsPath) ? fs.readFileSync(knownHostsPath, 'utf8') : null;
   try {
     await addHostKey('unit.local', 2222, `[unit.local]:2222 ssh-ed25519 ${key} unit-test`);
     assert.strictEqual(isHostKnown('unit.local', 2222), true);
@@ -269,11 +274,7 @@ register('ssh key manager reads local known_hosts safely', async () => {
     assert.deepStrictEqual(extractHostFromSSHError('Host key for [unit.local]:2222 has changed'), { host: 'unit.local', port: 2222 });
     assert.strictEqual(extractHostFromSSHError('plain error'), null);
   } finally {
-    if (originalKnownHosts === null) {
-      if (fs.existsSync(knownHostsPath)) fs.rmSync(knownHostsPath);
-    } else {
-      fs.writeFileSync(knownHostsPath, originalKnownHosts);
-    }
+    fs.rmSync(testKnownHostsDirectory, { recursive: true, force: true });
   }
 });
 

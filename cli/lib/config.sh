@@ -316,7 +316,7 @@ test_ssh_connection() {
 
     print_info "Testing connection to $server ($user@$host:$port)..."
 
-    local ssh_opts="-o ConnectTimeout=10 -o StrictHostKeyChecking=no"
+    local ssh_opts="-o ConnectTimeout=10 -o StrictHostKeyChecking=yes"
     local ssh_output=$(mktemp)
     local ssh_status
 
@@ -327,7 +327,7 @@ test_ssh_connection() {
     if [ -n "$password" ]; then
         # Use sshpass if available
         if command -v sshpass >/dev/null 2>&1; then
-            sshpass -p "$password" ssh $ssh_opts -p "$port" "$user@$host" "echo 'Connection successful'" > "$ssh_output" 2>&1
+            SSHPASS="$password" sshpass -e ssh $ssh_opts -p "$port" "$user@$host" "echo 'Connection successful'" > "$ssh_output" 2>&1
             ssh_status=$?
         else
             print_warning "sshpass not installed, cannot test password authentication"

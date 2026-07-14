@@ -174,12 +174,7 @@ class SSHTunnel {
     const { localHost, localPort, remoteHost, remotePort } = this.config;
 
     // Request remote forwarding from SSH server
-    await new Promise((resolve, reject) => {
-      this.ssh.forwardIn(remoteHost, remotePort, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
+    await this.ssh.forwardIn(remoteHost, remotePort);
 
     // Handle incoming connections from remote
     this.ssh.on('tcp connection', (info, accept) => {
@@ -394,7 +389,8 @@ class SSHTunnel {
 
     // Cancel remote forwarding if needed
     if (this.type === TUNNEL_TYPES.REMOTE) {
-      this.ssh.unforwardIn(this.config.remoteHost, this.config.remotePort);
+      void this.ssh.unforwardIn(this.config.remoteHost, this.config.remotePort)
+        .catch((error) => logger.warn('Failed to cancel remote forwarding', { tunnel: this.id, error: error.message }));
     }
 
     tunnels.delete(this.id);

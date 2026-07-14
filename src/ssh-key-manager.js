@@ -6,8 +6,14 @@ import crypto from 'crypto';
 import { logger } from './logger.js';
 
 // Path to known_hosts file
-const KNOWN_HOSTS_PATH = path.join(os.homedir(), '.ssh', 'known_hosts');
-const KNOWN_HOSTS_BACKUP = path.join(os.homedir(), '.ssh', 'known_hosts.mcp-backup');
+let KNOWN_HOSTS_PATH = path.join(os.homedir(), '.ssh', 'known_hosts');
+let KNOWN_HOSTS_BACKUP = path.join(os.homedir(), '.ssh', 'known_hosts.mcp-backup');
+
+// Test-only injection keeps unit tests from modifying a developer's real trust store.
+export function setKnownHostsPathForTesting(knownHostsPath) {
+  KNOWN_HOSTS_PATH = knownHostsPath;
+  KNOWN_HOSTS_BACKUP = `${knownHostsPath}.mcp-backup`;
+}
 
 /**
  * Parse a known_hosts entry
@@ -129,6 +135,22 @@ export function getCurrentHostKey(host, port = 22) {
   }
 
   return keys.length > 0 ? keys : null;
+}
+
+// ssh2 can hash the raw server key before calling hostVerifier. Keep this
+// separate from ssh-keyscan so connection-time verification never trusts an
+// unauthenticated network lookup.
+export function getKnownHostKeyHashes(host, port = 22) {
+  if (!fs.existsSync(KNOWN_HOSTS_PATH)) return [];
+
+  const hostEntry = port === 22 ? host : `[${host}]:${port}`;
+  const hashes = [];
+  for (const line of fs.readFileSync(KNOWN_HOSTS_PATH, 'utf8').split('\n')) {
+    const entry = parseKnownHostEntry(line);
+    if (!entry || !entry.host.split(',').includes(hostEntry)) continue;
+    hashes.push(crypto.createHash('sha256').update(Buffer.from(entry.key, 'base64')).digest('hex'));
+  }
+  return hashes;
 }
 
 /**

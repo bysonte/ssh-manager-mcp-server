@@ -50,4 +50,10 @@ audit_log = "/var/log/ssh-manager-audit.jsonl"
 
 Configurá `SSH_SERVER_<NOMBRE>_AUDIT_LOG` o `audit_log`. Se escriben eventos JSONL con secretos redactados.
 
+## Claves de host
+
+El servidor valida estrictamente la clave presentada contra `~/.ssh/known_hosts`.
+Antes de la primera conexión verificá la huella del servidor por un canal confiable y
+aceptala explícitamente con `ssh_key_manage`. No se aceptan hosts nuevos de forma automática.
+
 Siguiente: [Deploy](DEPLOYMENT_GUIDE.md).

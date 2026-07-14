@@ -142,6 +142,7 @@ import { evaluatePolicy } from './policy.js';
 import { auditLog } from './audit.js';
 import { normalizeToolResult, toolErrorResponse } from './mcp-response.js';
 import { writeServerConfig } from './server-writer.js';
+import { shellArg } from './shell-escape.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -228,10 +229,10 @@ const connections = new Map();
 const connectionTimestamps = new Map();
 
 // Connection timeout in milliseconds (30 minutes)
-const CONNECTION_TIMEOUT = 30 * 60 * 1000;
+const CONNECTION_TIMEOUT = TIMEOUTS.CONNECTION_TIMEOUT;
 
 // Keepalive interval in milliseconds (5 minutes)
-const KEEPALIVE_INTERVAL = 5 * 60 * 1000;
+const KEEPALIVE_INTERVAL = TIMEOUTS.KEEPALIVE_INTERVAL;
 
 // Map to store keepalive intervals
 const keepaliveIntervals = new Map();
@@ -294,6 +295,16 @@ async function applyServerPolicy(serverName, toolName, args, command) {
 async function auditOk(serverName, toolName, args, executionResult) {
   const serverConfig = await getServerConfig(serverName);
   auditLog(serverConfig, toolName, args, { allowed: true }, executionResult);
+}
+
+function buildWorkingCommand(command, cwd, serverConfig = {}) {
+  const workingDir = cwd || serverConfig.defaultDir;
+  if (!workingDir) return command;
+
+  if (serverConfig.platform === 'windows') {
+    return `Set-Location '${workingDir.replace(/'/g, '\'\'')}'; ${command}`;
+  }
+  return `cd ${shellArg(workingDir)} && ${command}`;
 }
 
 // Execute command with timeout - using child_process timeout for real kill
@@ -680,24 +691,12 @@ registerToolConditional(
         });
       }
 
-      // Use provided cwd, or default_dir from config, or no cwd
+      // Use provided cwd, or the normalized defaultDir from config, or no cwd.
       const servers = await loadServerConfig();
       const serverConfig = servers[serverName.toLowerCase()];
-      const workingDir = cwd || serverConfig?.default_dir;
       const platform = serverConfig?.platform || 'linux';
-
-      // Build cwd-prefixed command using platform-appropriate syntax
-      let fullCommand;
-      if (workingDir) {
-        if (platform === 'windows') {
-          const escapedDir = workingDir.replace(/'/g, '\'\'');
-          fullCommand = `Set-Location '${escapedDir}'; ${expandedCommand}`;
-        } else {
-          fullCommand = `cd ${workingDir} && ${expandedCommand}`;
-        }
-      } else {
-        fullCommand = expandedCommand;
-      }
+      const fullCommand = buildWorkingCommand(expandedCommand, cwd, serverConfig);
+      const workingDir = cwd || serverConfig?.defaultDir;
 
       // Log command execution
       const startTime = logger.logCommand(serverName, fullCommand, workingDir);
@@ -906,7 +905,7 @@ registerToolConditional(
       const serverConfig = servers[serverName.toLowerCase()];
 
       // Check if sshpass is available for password authentication
-      if (!serverConfig.keypath && serverConfig.password) {
+      if (!serverConfig.keyPath && serverConfig.password) {
         // Check if sshpass is installed
         try {
           const { execSync } = await import('child_process');
@@ -988,12 +987,12 @@ registerToolConditional(
       const sshOptions = [];
 
       // Different options based on authentication method
-      if (serverConfig.keypath) {
+      if (serverConfig.keyPath) {
         sshOptions.push('-o BatchMode=yes');           // No password prompts
         sshOptions.push('-o StrictHostKeyChecking=accept-new'); // Accept new keys, reject changed ones
         sshOptions.push('-o ConnectTimeout=10');        // Connection timeout
 
-        const keyPath = serverConfig.keypath.replace('~', os.homedir());
+        const keyPath = serverConfig.keyPath.replace('~', os.homedir());
         sshOptions.push(`-i ${keyPath}`);
       } else {
         // With sshpass, we don't use BatchMode
@@ -1214,7 +1213,7 @@ registerToolConditional(
 registerToolConditional(
   'ssh_tail',
   {
-    description: 'Reads the tail of a remote log file on the named server, optionally filtered by a grep pattern. Read-only; it does not modify remote state. Behavior depends on follow, which defaults to true: in follow mode it starts a streaming tail whose output is written to the server process stderr rather than returned, and the response only reports a session note, so to capture content directly set follow to false to get the last N lines back. The lines parameter defaults to 10.',
+    description: 'Reads a finite tail of a remote log file, optionally filtered by a grep pattern. This is read-only. Streaming follow is unsupported on stdio MCP because output cannot be delivered or cancelled reliably; leave follow false. The lines parameter defaults to 10 and is capped at 100.',
     inputSchema: {
       server: z.string().describe('Server name from configuration'),
       file: z.string().describe('Path to the log file to tail'),
@@ -1223,20 +1222,24 @@ registerToolConditional(
       grep: z.string().optional().describe('Filter lines with grep pattern')
     }
   },
-  async ({ server: serverName, file, lines = 10, follow = true, grep }) => {
+  async ({ server: serverName, file, lines = 10, follow = false, grep }) => {
     try {
+      if (follow) {
+        throw new Error('Streaming tail is not supported over stdio MCP. Use follow=false and poll, or ssh_execute for an interactive workflow.');
+      }
       const ssh = await getConnection(serverName);
 
       // Build tail command
-      let command = `tail -n ${lines}`;
+      const safeLines = Math.max(1, Math.min(Math.trunc(lines), 100));
+      let command = `tail -n ${safeLines}`;
       if (follow) {
         command += ' -f';
       }
-      command += ` "${file}"`;
+      command += ` ${shellArg(file)}`;
 
       // Add grep filter if specified
       if (grep) {
-        command += ` | grep "${grep}"`;
+        command += ` | grep -- ${shellArg(grep)}`;
       }
 
       logger.info(`Starting tail on ${serverName}`, {
@@ -1246,54 +1249,27 @@ registerToolConditional(
         grep
       });
 
-      // For follow mode, we need to handle streaming
-      if (follow) {
-        // Create a unique session ID for this tail
-        const sessionId = `tail_${Date.now()}`;
+      const tailServers = await loadServerConfig();
+      const tailServerConfig = tailServers[serverName.toLowerCase()];
+      const result = await execCommandWithTimeout(ssh, command, { platform: tailServerConfig?.platform }, 15000);
 
-        // Store the SSH stream for later cleanup
-        await ssh.execCommandStream(command, {
-          onStdout: (chunk) => {
-            // In a real implementation, this would stream to the client
-            console.error(`[${serverName}:${file}] ${chunk}`);
-          },
-          onStderr: (chunk) => {
-            console.error(`[ERROR] ${chunk}`);
-          }
-        });
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `📜 Tailing ${file} on ${serverName}\nSession ID: ${sessionId}\nShowing last ${lines} lines${grep ? ` (filtered: ${grep})` : ''}\n\n⚠️ Note: In follow mode, output is streamed to stderr.\nTo stop tailing, you'll need to kill the session.`
-            }
-          ]
-        };
-      } else {
-        // Non-follow mode - just get the output
-        const tailServers = await loadServerConfig();
-        const tailServerConfig = tailServers[serverName.toLowerCase()];
-        const result = await execCommandWithTimeout(ssh, command, { platform: tailServerConfig?.platform }, 15000);
-
-        if (result.code !== 0) {
-          throw new Error(result.stderr || 'Failed to tail file');
-        }
-
-        logger.info(`Tail completed on ${serverName}`, {
-          file,
-          lines: result.stdout.split('\n').length
-        });
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `📜 Last ${lines} lines of ${file} on ${serverName}${grep ? ` (filtered: ${grep})` : ''}:\n\n${result.stdout}`
-            }
-          ]
-        };
+      if (result.code !== 0) {
+        throw new Error(result.stderr || 'Failed to tail file');
       }
+
+      logger.info(`Tail completed on ${serverName}`, {
+        file,
+        lines: result.stdout.split('\n').length
+      });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `📜 Last ${safeLines} lines of ${file} on ${serverName}${grep ? ` (filtered: ${grep})` : ''}:\n\n${result.stdout}`
+          }
+        ]
+      };
     } catch (error) {
       logger.error(`Tail failed on ${serverName}`, {
         file,
@@ -1869,7 +1845,7 @@ function formatDuration(seconds) {
 registerToolConditional(
   'ssh_execute_group',
   {
-    description: 'Runs one command on every server belonging to the named group and returns a per-server success or failure report. Mutates remote state on each member and is not idempotent. Best-effort: the security policy of each server is evaluated independently, so readonly or restricted members are reported as failed without aborting the rest unless stopOnError is set. Strategy may be parallel, sequential, or rolling (delay applies between servers). Per-server timeout is 30000 ms; cwd defaults to the default_dir of each server.',
+    description: 'Runs one command on every server belonging to the named group and returns a per-server success or failure report. Mutates remote state on each member and is not idempotent. Best-effort: the security policy of each server is evaluated independently, so readonly or restricted members are reported as failed without aborting the rest unless stopOnError is set. Strategy may be parallel, sequential, or rolling (delay applies between servers). Per-server timeout is 30000 ms; cwd defaults to the configured default directory.',
     inputSchema: {
       group: z.string().describe('Group name (e.g., "production", "staging", "all")'),
       command: z.string().describe('Command to execute'),
@@ -1901,20 +1877,8 @@ registerToolConditional(
           // does not support `cd && `) vs cd && for Linux/macOS.
           const servers = await loadServerConfig();
           const serverConfig = servers[serverName.toLowerCase()];
-          const workingDir = cwd || serverConfig?.default_dir;
           const platform = serverConfig?.platform || 'linux';
-          let fullCommand;
-          if (workingDir) {
-            if (platform === 'windows') {
-              // Single-quote escaping: replace ' with '' (PowerShell convention)
-              const escapedDir = workingDir.replace(/'/g, '\'\'');
-              fullCommand = `Set-Location '${escapedDir}'; ${command}`;
-            } else {
-              fullCommand = `cd ${workingDir} && ${command}`;
-            }
-          } else {
-            fullCommand = command;
-          }
+          const fullCommand = buildWorkingCommand(command, cwd, serverConfig);
 
           const execResult = await execCommandWithTimeout(ssh, fullCommand, { platform }, 30000);
 
@@ -2141,7 +2105,7 @@ registerToolConditional(
       user: config.user,
       port: config.port || '22',
       auth: config.password ? 'password' : 'key',
-      defaultDir: config.default_dir || '',
+      defaultDir: config.defaultDir || '',
       description: config.description || ''
     }));
 
@@ -2301,34 +2265,20 @@ registerToolConditional(
 
       // Add password if provided
       if (password) {
-        fullCommand = `echo "${password}" | sudo -S ${command.replace(/^sudo /, '')}`;
-      } else if (serverConfig?.sudo_password) {
+        fullCommand = `printf '%s\\n' ${shellArg(password)} | sudo -S ${command.replace(/^sudo /, '')}`;
+      } else if (serverConfig?.sudoPassword) {
         // Use configured sudo password if available
-        fullCommand = `echo "${serverConfig.sudo_password}" | sudo -S ${command.replace(/^sudo /, '')}`;
+        fullCommand = `printf '%s\\n' ${shellArg(serverConfig.sudoPassword)} | sudo -S ${command.replace(/^sudo /, '')}`;
       }
 
       // Add working directory if specified
       const platform = serverConfig?.platform || 'linux';
-      if (cwd) {
-        if (platform === 'windows') {
-          const escapedDir = cwd.replace(/'/g, '\'\'');
-          fullCommand = `Set-Location '${escapedDir}'; ${fullCommand}`;
-        } else {
-          fullCommand = `cd ${cwd} && ${fullCommand}`;
-        }
-      } else if (serverConfig?.default_dir) {
-        if (platform === 'windows') {
-          const escapedDir = serverConfig.default_dir.replace(/'/g, '\'\'');
-          fullCommand = `Set-Location '${escapedDir}'; ${fullCommand}`;
-        } else {
-          fullCommand = `cd ${serverConfig.default_dir} && ${fullCommand}`;
-        }
-      }
+      fullCommand = buildWorkingCommand(fullCommand, cwd, serverConfig);
 
       const result = await execCommandWithTimeout(ssh, fullCommand, { platform }, timeout);
 
       // Mask password in output for security
-      const maskedCommand = fullCommand.replace(/echo "[^"]+" \| sudo -S/, 'sudo');
+      const maskedCommand = fullCommand.replace(/printf '%s\\n' '[^']*' \| sudo -S/, 'sudo');
 
       return {
         content: [
@@ -2764,9 +2714,7 @@ registerToolConditional(
         throw new Error(`Server "${server}" not found`);
       }
 
-      const serverConfig = servers[resolvedName];
-      const ssh = new SSHManager(serverConfig);
-      await ssh.connect();
+      const ssh = await getConnection(resolvedName);
 
       const config = {
         type,
@@ -4843,7 +4791,7 @@ registerToolConditional(
 registerToolConditional(
   'ssh_add_server',
   {
-    description: 'Adds a new SSH server to the configuration without restarting the MCP server. Supports password and key-based authentication. When copy_key is true, connects to the server with a password to install the local public SSH key (default ~/.ssh/id_rsa.pub) into the remote authorized_keys file — the Windows-compatible approach. When test_connection is true (default), verifies the connection works before returning. The server name must start with a letter and contain only letters, numbers, and underscores.',
+    description: 'Adds a new SSH server to the configuration without restarting the MCP server. Supports password and key-based authentication. When copy_key is true, connects with a password to install the local public SSH key (default ~/.ssh/id_rsa.pub) into remote authorized_keys. The host key must be explicitly trusted in known_hosts before any connection. When test_connection is true (default), verifies the connection works before returning. The server name must start with a letter and contain only letters, numbers, and underscores.',
     inputSchema: {
       name: z.string().describe('Server name identifier (letters, numbers, underscores; must start with a letter)'),
       host: z.string().describe('Hostname or IP address of the SSH server'),
@@ -4918,7 +4866,7 @@ registerToolConditional(
       const installCmd =
         `mkdir -p ~/.ssh && chmod 700 ~/.ssh && printf '%s\\n' ${escapedKey} >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys`;
 
-      const tempSsh = new SSHManager({ host, user, port, password, autoAcceptHostKey: true });
+      const tempSsh = new SSHManager({ host, user, port, password });
       try {
         await tempSsh.connect();
         const result = await tempSsh.execCommand(installCmd, { timeout: 30000 });

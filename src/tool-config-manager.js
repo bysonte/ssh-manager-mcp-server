@@ -9,7 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { logger } from './logger.js';
-import { TOOL_GROUPS, findToolGroup, getAllTools } from './tool-registry.js';
+import { AGENTIC_TOOLS, TOOL_GROUPS, findToolGroup, getAllTools } from './tool-registry.js';
 
 /**
  * Configuration file location
@@ -21,10 +21,10 @@ const CONFIG_FILE = path.join(CONFIG_DIR, 'tools-config.json');
 /**
  * Tool Configuration Manager Class
  */
-class ToolConfigManager {
-  constructor() {
+export class ToolConfigManager {
+  constructor(configPath = CONFIG_FILE) {
     this.config = null;
-    this.configPath = CONFIG_FILE;
+    this.configPath = configPath;
   }
 
   /**
@@ -43,12 +43,12 @@ class ToolConfigManager {
           this.config = this.getDefaultConfig();
         } else {
           logger.info(`Tool configuration loaded from ${this.configPath}`);
-          logger.info(`Mode: ${this.config.mode}, Enabled tools: ${this.getEnabledTools().length}/37`);
+          logger.info(`Mode: ${this.config.mode}, Enabled tools: ${this.getEnabledTools().length}/${getAllTools().length}`);
         }
       } else {
-        // No config file - default to all tools enabled
-        logger.info('No tool configuration found, enabling all tools (default)');
-        logger.info('Run "ssh-manager tools configure" to optimize and reduce context usage');
+        // New installations should not pay the context cost of every optional tool.
+        logger.info('No tool configuration found, enabling curated agentic tools (default)');
+        logger.info('Run "ssh-manager tools configure" to enable additional tools');
         this.config = this.getDefaultConfig();
       }
     } catch (error) {
@@ -61,13 +61,13 @@ class ToolConfigManager {
   }
 
   /**
-   * Get default configuration (all tools enabled)
+   * Get default configuration (curated agentic tools)
    * @returns {Object} Default configuration
    */
   getDefaultConfig() {
     return {
       version: '1.0',
-      mode: 'all',
+      mode: 'agentic',
       groups: {
         core: { enabled: true },
         sessions: { enabled: true },
@@ -77,7 +77,7 @@ class ToolConfigManager {
         advanced: { enabled: true }
       },
       tools: {},
-      _comment: 'Tool configuration for MCP SSH Manager. Run "ssh-manager tools configure" to customize.'
+      _comment: 'Curated agentic tool configuration for MCP SSH Manager. Run "ssh-manager tools configure" to customize.'
     };
   }
 
@@ -97,7 +97,7 @@ class ToolConfigManager {
     }
 
     // Validate mode
-    if (!['all', 'minimal', 'custom'].includes(config.mode)) {
+    if (!['all', 'agentic', 'minimal', 'custom'].includes(config.mode)) {
       return false;
     }
 
@@ -122,6 +122,10 @@ class ToolConfigManager {
     // Mode: all - everything enabled
     if (this.config.mode === 'all') {
       return true;
+    }
+
+    if (this.config.mode === 'agentic') {
+      return AGENTIC_TOOLS.includes(toolName);
     }
 
     // Check individual tool override first
@@ -179,6 +183,10 @@ class ToolConfigManager {
       return true;
     }
 
+    if (this.config.mode === 'agentic') {
+      return AGENTIC_TOOLS.some((tool) => findToolGroup(tool) === groupName);
+    }
+
     if (this.config.mode === 'minimal') {
       return groupName === 'core';
     }
@@ -197,8 +205,9 @@ class ToolConfigManager {
   async save() {
     try {
       // Ensure config directory exists
-      if (!fs.existsSync(CONFIG_DIR)) {
-        fs.mkdirSync(CONFIG_DIR, { recursive: true });
+      const configDir = path.dirname(this.configPath);
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
       }
 
       // Write config file
@@ -329,11 +338,11 @@ class ToolConfigManager {
 
   /**
    * Set configuration mode
-   * @param {string} mode - Mode to set ('all', 'minimal', 'custom')
+   * @param {string} mode - Mode to set ('all', 'agentic', 'minimal', 'custom')
    * @returns {Promise<boolean>} True if successful
    */
   async setMode(mode) {
-    if (!['all', 'minimal', 'custom'].includes(mode)) {
+    if (!['all', 'agentic', 'minimal', 'custom'].includes(mode)) {
       logger.error(`Invalid mode: ${mode}`);
       return false;
     }
@@ -349,7 +358,7 @@ class ToolConfigManager {
    */
   async reset() {
     this.config = this.getDefaultConfig();
-    logger.info('Reset tool configuration to defaults (all tools enabled)');
+    logger.info('Reset tool configuration to defaults (agentic tools enabled)');
     return await this.save();
   }
 
@@ -364,7 +373,7 @@ class ToolConfigManager {
     return {
       mode: this.config.mode,
       configPath: this.configPath,
-      totalTools: 37,
+      totalTools: getAllTools().length,
       enabledCount: enabledTools.length,
       disabledCount: disabledTools.length,
       groups: Object.keys(TOOL_GROUPS).map(groupName => ({

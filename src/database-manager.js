@@ -400,13 +400,23 @@ export function buildPostgreSQLQueryCommand(options) {
 export function buildMongoDBQueryCommand(options) {
   const { database, collection, query, user, password, host = 'localhost', port = 27017 } = options;
 
+  let filter;
+  try {
+    filter = JSON.parse(query || '{}');
+  } catch {
+    throw new Error('MongoDB query must be a valid JSON filter object');
+  }
+  if (!filter || Array.isArray(filter) || typeof filter !== 'object') {
+    throw new Error('MongoDB query must be a JSON filter object');
+  }
+
   let command = 'mongo';
   if (host) command += ` --host ${shellArg(host)}`;
   if (port) command += ` --port ${port}`;
   if (user) command += ` --username ${shellArg(user)}`;
   if (password) command += ` --password ${shellArg(password)}`;
   command += ` ${shellArg(database)}`;
-  command += ` --quiet --eval ${shellArg(`db.getCollection(${JSON.stringify(collection)}).find(${query || '{}'}).forEach(printjson)`)}`;
+  command += ` --quiet --eval ${shellArg(`db.getCollection(${JSON.stringify(collection)}).find(${JSON.stringify(filter)}).forEach(printjson)`)}`;
 
   return command;
 }
@@ -415,17 +425,19 @@ export function buildMongoDBQueryCommand(options) {
  * Validate query is safe (SELECT only)
  */
 export function isSafeQuery(query) {
-  const trimmedQuery = query.trim().toLowerCase();
+  if (typeof query !== 'string') return false;
+  const trimmedQuery = query.trim().replace(/;\s*$/, '').toLowerCase();
 
   // Must start with SELECT
-  if (!trimmedQuery.startsWith('select')) {
+  if (!trimmedQuery.startsWith('select') || /;|--|\/\*/.test(trimmedQuery)) {
     return false;
   }
 
   // Block dangerous keywords
   const dangerousKeywords = [
     'insert', 'update', 'delete', 'drop', 'create', 'alter',
-    'truncate', 'grant', 'revoke', 'exec', 'execute'
+    'truncate', 'grant', 'revoke', 'exec', 'execute', 'into', 'outfile',
+    'dumpfile', 'load', 'lock', 'for update', 'for share'
   ];
 
   for (const keyword of dangerousKeywords) {

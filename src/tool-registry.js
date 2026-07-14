@@ -7,7 +7,7 @@
 
 /**
  * Tool groups with their associated tools
- * Total: 37 tools across 6 groups
+ * Total: 38 tools across 6 groups
  */
 export const TOOL_GROUPS = {
   // Core group (5 tools) - Essential SSH operations
@@ -73,6 +73,28 @@ export const TOOL_GROUPS = {
   ]
 };
 
+// Curated default for autonomous agents. It keeps high-value remote operations
+// while avoiding local configuration, redundant monitoring, and streaming tools.
+export const AGENTIC_TOOLS = [
+  'ssh_list_servers',
+  'ssh_execute',
+  'ssh_upload',
+  'ssh_download',
+  'ssh_health_check',
+  'ssh_service_status',
+  'ssh_process_manager',
+  'ssh_deploy',
+  'ssh_execute_group',
+  'ssh_backup_create',
+  'ssh_backup_list',
+  'ssh_backup_restore',
+  'ssh_backup_schedule',
+  'ssh_tunnel_create',
+  'ssh_tunnel_list',
+  'ssh_tunnel_close',
+  'ssh_key_manage'
+];
+
 /**
  * Human-readable descriptions for each tool group
  */
@@ -99,10 +121,14 @@ export const TOOL_GROUP_COUNTS = {
 
 /**
  * Get all tool names across all groups
- * @returns {string[]} Array of all 37 tool names
+ * @returns {string[]} Array of all 38 tool names
  */
 export function getAllTools() {
   return Object.values(TOOL_GROUPS).flat();
+}
+
+export function isAgenticTool(toolName) {
+  return AGENTIC_TOOLS.includes(toolName);
 }
 
 /**

@@ -14,7 +14,9 @@ import {
   getGroupTools,
   validateToolRegistry,
   getToolStats,
-  verifyIntegrity
+  verifyIntegrity,
+  AGENTIC_TOOLS,
+  isAgenticTool
 } from '../src/tool-registry.js';
 
 // Test colors
@@ -56,6 +58,14 @@ console.log('\n' + YELLOW + 'Running Tool Registry Tests...' + NC + '\n');
 test('All 38 tools are defined in groups', () => {
   const allTools = getAllTools();
   assertEqual(allTools.length, 38, 'Should have exactly 38 tools');
+});
+
+test('Agentic profile contains the curated 17 tools', () => {
+  assertEqual(AGENTIC_TOOLS.length, 17, 'Agentic profile should expose 17 tools');
+  assertTrue(isAgenticTool('ssh_execute'), 'ssh_execute should be agentic');
+  assertTrue(isAgenticTool('ssh_deploy'), 'ssh_deploy should be agentic');
+  assertTrue(!isAgenticTool('ssh_add_server'), 'local server administration should not be agentic');
+  assertTrue(!isAgenticTool('ssh_tail'), 'streaming tail should not be agentic');
 });
 
 // Test 2: No duplicate tools

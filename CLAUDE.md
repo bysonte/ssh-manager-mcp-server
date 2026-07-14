@@ -60,13 +60,10 @@ ssh-manager server show SERVER                # Muestra detalles del servidor
 ```
 
 ### Integración con OpenAI Codex
-```bash
-ssh-manager codex setup                       # Configura Codex
-ssh-manager codex migrate                     # Convierte servidores a TOML
-ssh-manager codex test                        # Prueba integración con Codex
-ssh-manager codex convert to-toml            # Convierte .env a TOML
-ssh-manager codex convert to-env             # Convierte TOML a .env
-```
+
+Codex usa la configuración TOML indicada por `SSH_CONFIG_PATH` o
+`~/.codex/ssh-config.toml`. No existen subcomandos `ssh-manager codex`; ver
+`docs/MCP_CLIENT_INSTALLATION.md` para la configuración por `stdio`.
 
 ### Gestión de herramientas
 ```bash
@@ -78,9 +75,9 @@ ssh-manager tools reset                       # Restablece valores por defecto
 ssh-manager tools export-claude               # Exporta configuración de autoaprobación
 ```
 
-**Grupos de herramientas**: core (5), sessions (4), monitoring (6), backup (4), database (4), advanced (14)
+**Grupos de herramientas**: core (5), sessions (4), monitoring (6), backup (4), database (4), advanced (15). Total: 38.
 
-**Modos**: all (37 herramientas), minimal (5 herramientas), custom (variable)
+**Modos**: agentic (17 herramientas, default sin configuración), all (38), minimal (5) y custom (variable). Un `mode: "all"` existente se respeta.
 
 Ver [docs/TOOL_MANAGEMENT.md](docs/TOOL_MANAGEMENT.md) para la guía completa.
 
@@ -148,10 +145,11 @@ MCP SSH Manager soporta dos formatos de configuración:
 
 ### Prioridad de carga de configuración
 
-El sistema carga configuraciones en este orden, de mayor a menor prioridad:
-1. Variables de entorno (`process.env`).
-2. Archivo `.env` en la raíz del proyecto.
-3. Archivo TOML indicado por `SSH_CONFIG_PATH` o `~/.codex/ssh-config.toml`.
+El cargador combina TOML, `.env` y variables de proceso; estas últimas tienen
+prioridad máxima. El `.env` se busca en este orden: `SSH_ENV_PATH`,
+`~/.ssh-manager/.env`, directorio actual, `~/.env` y raíz del proyecto. TOML
+usa `SSH_CONFIG_PATH` o `~/.codex/ssh-config.toml`; `PREFER_TOML_CONFIG=true`
+omite el `.env`.
 
 ### Formato .env
 ```
@@ -204,6 +202,7 @@ proxy_command = "command"                   # Opcional, comando proxy propio (nc
 - Preferir claves SSH antes que contraseñas.
 - Guardar contraseñas de sudo separadas de las contraseñas SSH.
 - Usar políticas `readonly` o `restricted` para servidores sensibles.
+- Fijar las claves de host en `known_hosts` antes de conectarse; no autoaceptar claves nuevas.
 - Revisar logs antes de compartir salidas.
 
 ## Validación y calidad

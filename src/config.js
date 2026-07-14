@@ -1,7 +1,7 @@
 // Configuration constants for MCP SSH Manager
 
 // Output limits to prevent Claude Code crashes
-const OUTPUT_LIMITS = {
+export const OUTPUT_LIMITS = {
   // Maximum length of stdout/stderr in responses (characters)
   MAX_OUTPUT_LENGTH: process.env.MCP_SSH_MAX_OUTPUT_LENGTH
     ? parseInt(process.env.MCP_SSH_MAX_OUTPUT_LENGTH)

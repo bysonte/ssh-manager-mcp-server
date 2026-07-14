@@ -63,6 +63,7 @@ Leé en este orden:
 3. [Índice de documentación](docs/README.md)
 4. [Instalación en clientes MCP](docs/MCP_CLIENT_INSTALLATION.md)
 5. [Gestión de tools](docs/TOOL_MANAGEMENT.md)
+6. [Catálogo de tools](TOOLS.md)
 6. [Modos de seguridad](docs/SECURITY_MODES.md)
 7. [Deploy](docs/DEPLOYMENT_GUIDE.md)
 8. [Backups](docs/BACKUP_GUIDE.md)
