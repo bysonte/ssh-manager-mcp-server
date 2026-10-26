@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
+import { Client } from 'ssh2';
 import { logger } from './logger.js';
 
 // Path to known_hosts file
@@ -32,51 +33,134 @@ function parseKnownHostEntry(line) {
   };
 }
 
-/**
- * Get the SSH host key fingerprint for a server
- */
-export async function getHostKeyFingerprint(host, port = 22) {
+export function hostKeyFromRawKey(host, port, rawKey) {
+  const key = Buffer.from(rawKey);
+  if (key.length < 4) {
+    throw new Error('Invalid SSH host key received');
+  }
+
+  const typeLength = key.readUInt32BE(0);
+  if (typeLength === 0 || key.length < 4 + typeLength) {
+    throw new Error('Invalid SSH host key type received');
+  }
+
+  const type = key.subarray(4, 4 + typeLength).toString('ascii');
+  if (!/^[A-Za-z0-9@.+-]+$/.test(type)) {
+    throw new Error('Invalid SSH host key type received');
+  }
+
+  const hostEntry = port === 22 ? host : `[${host}]:${port}`;
+  const encodedKey = key.toString('base64');
+  const hash = crypto.createHash('sha256').update(key).digest('base64');
+  return {
+    host: hostEntry,
+    type,
+    fingerprint: `SHA256:${hash}`,
+    fullKey: `${hostEntry} ${type} ${encodedKey}`
+  };
+}
+
+async function getHostKeyFingerprintWithSSH2(host, port) {
   return new Promise((resolve, reject) => {
-    const cmd = spawn('ssh-keyscan', ['-p', port.toString(), '-t', 'ed25519,rsa,ecdsa', host]);
-    let stdout = '';
-    let stderr = '';
+    const client = new Client();
+    let presentedKey = null;
+    let settled = false;
 
-    cmd.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      callback(value);
+    };
 
-    cmd.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    cmd.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`Failed to get host key: ${stderr}`));
-        return;
-      }
-
-      const lines = stdout.trim().split('\n').filter(l => l && !l.startsWith('#'));
-      const fingerprints = [];
-
-      for (const line of lines) {
-        const entry = parseKnownHostEntry(line);
-        if (entry) {
-          // Calculate SHA256 fingerprint
-          const keyData = Buffer.from(entry.key, 'base64');
-          const hash = crypto.createHash('sha256').update(keyData).digest('base64');
-
-          fingerprints.push({
-            host: entry.host,
-            type: entry.keyType,
-            fingerprint: `SHA256:${hash}`,
-            fullKey: line
-          });
+    client.on('error', (error) => {
+      // Deliberately reject the handshake after capturing the unauthenticated
+      // key. `accept` is the explicit trust-on-first-use action that persists it.
+      if (presentedKey) {
+        try {
+          finish(resolve, [hostKeyFromRawKey(host, port, presentedKey)]);
+        } catch (parseError) {
+          finish(reject, parseError);
         }
+      } else {
+        finish(reject, error);
       }
+    });
 
-      resolve(fingerprints);
+    client.connect({
+      host,
+      port,
+      // ssh2 requires a username even though host verification occurs before
+      // authentication. This value is never submitted because hostVerifier
+      // deliberately rejects the connection after capturing the public key.
+      username: 'hostkey-probe',
+      readyTimeout: 15000,
+      hostVerifier: (key) => {
+        presentedKey = Buffer.from(key);
+        return false;
+      }
     });
   });
+}
+
+/**
+ * Get the SSH host key fingerprint for a server.
+ *
+ * Prefer ssh2 because it is the transport used by the MCP itself. On Windows,
+ * the installed ssh-keyscan can lack KEX support offered by a modern server,
+ * making an otherwise reachable host impossible to inspect or accept.
+ */
+export async function getHostKeyFingerprint(host, port = 22) {
+  try {
+    return await getHostKeyFingerprintWithSSH2(host, port);
+  } catch (ssh2Error) {
+    logger.debug('SSH2 host key scan failed; trying ssh-keyscan fallback', {
+      host,
+      port,
+      error: ssh2Error.message
+    });
+
+    return new Promise((resolve, reject) => {
+      const cmd = spawn('ssh-keyscan', ['-p', port.toString(), '-t', 'ed25519,rsa,ecdsa', host]);
+      let stdout = '';
+      let stderr = '';
+
+      cmd.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      cmd.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      cmd.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(`Failed to get host key: ${stderr}`));
+          return;
+        }
+
+        const lines = stdout.trim().split('\n').filter(l => l && !l.startsWith('#'));
+        const fingerprints = [];
+
+        for (const line of lines) {
+          const entry = parseKnownHostEntry(line);
+          if (entry) {
+            // Calculate SHA256 fingerprint
+            const keyData = Buffer.from(entry.key, 'base64');
+            const hash = crypto.createHash('sha256').update(keyData).digest('base64');
+
+            fingerprints.push({
+              host: entry.host,
+              type: entry.keyType,
+              fingerprint: `SHA256:${hash}`,
+              fullKey: line
+            });
+          }
+        }
+
+        resolve(fingerprints);
+      });
+    });
+  }
 }
 
 /**

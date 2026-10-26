@@ -115,7 +115,7 @@ class SSHSession {
   /**
    * Wait for a marker in shell output
    */
-  async waitForMarker(marker, timeout = 5000) {
+  async waitForMarker(marker, timeout = 10000) {
     const startTime = Date.now();
 
     while (Date.now() - startTime < timeout) {
@@ -190,7 +190,7 @@ class SSHSession {
       this.shell.write(`set +e\n${command}\n__mcp_status=$?\nprintf '\\n${endMarker}:%s\\n' "$__mcp_status"\n`);
 
       // Wait for command completion marker
-      await this.waitForMarker(endMarker, options.timeout || 30000);
+      await this.waitForMarker(endMarker, options.timeout || 60000);
 
       const markerIndex = this.outputBuffer.indexOf(endMarker);
       if (markerIndex < 0) {
@@ -358,7 +358,7 @@ export function closeSession(sessionId) {
 /**
  * Cleanup old sessions
  */
-function cleanupSessions(maxAge = 30 * 60 * 1000) { // 30 minutes default
+function cleanupSessions(maxAge = 60 * 60 * 1000) { // 60 minutes default
   const now = Date.now();
   let cleanedCount = 0;
 

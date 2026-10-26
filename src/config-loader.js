@@ -152,7 +152,7 @@ export class ConfigLoader {
    * Load configuration from .env file
    */
   loadEnvConfig(envPath) {
-    const result = dotenv.config({ path: envPath, processEnv: {} });
+    const result = dotenv.config({ path: envPath, processEnv: {}, quiet: true });
     if (result.error) {
       throw result.error;
     }
@@ -347,7 +347,7 @@ export class ConfigLoader {
       env: {
         SSH_CONFIG_PATH: path.join(os.homedir(), '.codex', 'ssh-config.toml')
       },
-      startup_timeout_ms: 20000
+      startup_timeout_ms: 40000
     };
 
     // Write back to config file

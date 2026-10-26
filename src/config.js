@@ -23,17 +23,17 @@ export const TIMEOUTS = {
   // Default command execution timeout (milliseconds)
   DEFAULT_COMMAND_TIMEOUT: process.env.MCP_SSH_DEFAULT_TIMEOUT
     ? parseInt(process.env.MCP_SSH_DEFAULT_TIMEOUT)
-    : 120000, // 2 minutes
+    : 240000, // 4 minutes
 
   // Maximum allowed command timeout (milliseconds)
   MAX_COMMAND_TIMEOUT: process.env.MCP_SSH_MAX_TIMEOUT
     ? parseInt(process.env.MCP_SSH_MAX_TIMEOUT)
-    : 300000, // 5 minutes
+    : 600000, // 10 minutes
 
   // Connection timeout (milliseconds)
   CONNECTION_TIMEOUT: process.env.MCP_SSH_CONNECTION_TIMEOUT
     ? parseInt(process.env.MCP_SSH_CONNECTION_TIMEOUT)
-    : 1800000, // 30 minutes
+    : 3600000, // 60 minutes
 
   // Keepalive interval (milliseconds)
   KEEPALIVE_INTERVAL: process.env.MCP_SSH_KEEPALIVE_INTERVAL

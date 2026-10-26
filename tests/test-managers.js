@@ -18,6 +18,7 @@ import {
   listKnownHosts,
   detectSSHKeyError,
   extractHostFromSSHError,
+  hostKeyFromRawKey,
   addHostKey,
   setKnownHostsPathForTesting
 } from '../src/ssh-key-manager.js';
@@ -276,6 +277,22 @@ register('ssh key manager reads local known_hosts safely', async () => {
   } finally {
     fs.rmSync(testKnownHostsDirectory, { recursive: true, force: true });
   }
+});
+
+register('ssh key manager formats an ssh2 raw host key for known_hosts', () => {
+  const type = Buffer.from('ssh-ed25519');
+  const rawKey = Buffer.concat([
+    Buffer.from([0, 0, 0, type.length]),
+    type,
+    Buffer.from('public-key-data')
+  ]);
+  const key = hostKeyFromRawKey('nexus.local', 2222, rawKey);
+
+  assert.strictEqual(key.host, '[nexus.local]:2222');
+  assert.strictEqual(key.type, 'ssh-ed25519');
+  assert.match(key.fingerprint, /^SHA256:/);
+  assert.strictEqual(key.fullKey, `[nexus.local]:2222 ssh-ed25519 ${rawKey.toString('base64')}`);
+  assert.throws(() => hostKeyFromRawKey('bad', 22, Buffer.alloc(3)), /Invalid SSH host key/);
 });
 
 for (const item of registered) {

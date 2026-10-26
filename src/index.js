@@ -173,7 +173,7 @@ function resolveEnvFilePath() {
 }
 
 const envFilePath = resolveEnvFilePath();
-const envFile = dotenv.config({ path: envFilePath, processEnv: {} });
+const envFile = dotenv.config({ path: envFilePath, processEnv: {}, quiet: true });
 const envFileValues = envFile.parsed || {};
 
 function getRuntimeEnv(name) {
@@ -228,7 +228,7 @@ const connections = new Map();
 // Map to store connection timestamps for timeout management
 const connectionTimestamps = new Map();
 
-// Connection timeout in milliseconds (30 minutes)
+// Connection timeout in milliseconds (60 minutes)
 const CONNECTION_TIMEOUT = TIMEOUTS.CONNECTION_TIMEOUT;
 
 // Keepalive interval in milliseconds (5 minutes)
@@ -239,7 +239,7 @@ const keepaliveIntervals = new Map();
 
 // Extra grace window so the remote `timeout` wrapper can exit cleanly
 // and return its timeout exit code before the local SSH exec timeout fires.
-const WRAPPED_COMMAND_TIMEOUT_GRACE_MS = 5000;
+const WRAPPED_COMMAND_TIMEOUT_GRACE_MS = 10000;
 
 // Map to track proxy jump dependencies (target -> jump server)
 const jumpDependencies = new Map();
@@ -308,7 +308,7 @@ function buildWorkingCommand(command, cwd, serverConfig = {}) {
 }
 
 // Execute command with timeout - using child_process timeout for real kill
-async function execCommandWithTimeout(ssh, command, options = {}, timeoutMs = 30000) {
+async function execCommandWithTimeout(ssh, command, options = {}, timeoutMs = 60000) {
   // Pass through rawCommand and platform if specified
   const { rawCommand, platform = 'linux', ...otherOptions } = options;
 
@@ -334,7 +334,7 @@ async function execCommandWithTimeout(ssh, command, options = {}, timeoutMs = 30
   // && !rawCommand)` block), so by the time execution reaches this line it is
   // guaranteed to be a Linux/macOS target. The behaviour is identical; the old
   // guard was made redundant by the early-return path.
-  const useSystemTimeout = timeoutMs > 0 && timeoutMs < 300000 && !rawCommand; // Max 5 minutes, not for raw commands
+  const useSystemTimeout = timeoutMs > 0 && timeoutMs < 600000 && !rawCommand; // Max 10 minutes, not for raw commands
 
   if (useSystemTimeout) {
     // Wrap command with timeout command (works on Linux/Mac)
@@ -660,12 +660,12 @@ function registerToolConditional(toolName, schema, handler) {
 registerToolConditional(
   'ssh_execute',
   {
-    description: 'Runs a shell command over SSH on a named configured server and returns stdout, stderr, and exit code. Mutates remote state depending on the command; not read-only. Expands command aliases before running. Uses the cwd parameter or, if omitted, the server configured default directory; adapts syntax for Linux versus Windows PowerShell targets. Timeout defaults to 120000 ms and is capped at 300000 ms. Under readonly mode destructive commands like rm or dd are refused; under restricted mode the command must match allow patterns. Output is truncated when very large.',
+    description: 'Runs a shell command over SSH on a named configured server and returns stdout, stderr, and exit code. Mutates remote state depending on the command; not read-only. Expands command aliases before running. Uses the cwd parameter or, if omitted, the server configured default directory; adapts syntax for Linux versus Windows PowerShell targets. Timeout defaults to 240000 ms and is capped at 600000 ms. Under readonly mode destructive commands like rm or dd are refused; under restricted mode the command must match allow patterns. Output is truncated when very large.',
     inputSchema: {
       server: z.string().describe('Server name from configuration'),
       command: z.string().describe('Command to execute'),
       cwd: z.string().optional().describe('Working directory (optional, uses default if configured)'),
-      timeout: z.number().optional().describe('Command timeout in milliseconds (default: 120000, max: 300000)')
+      timeout: z.number().optional().describe('Command timeout in milliseconds (default: 240000, max: 600000)')
     }
   },
   async ({ server: serverName, command, cwd, timeout = TIMEOUTS.DEFAULT_COMMAND_TIMEOUT }) => {
@@ -881,7 +881,7 @@ registerToolConditional(
 registerToolConditional(
   'ssh_sync',
   {
-    description: 'Synchronizes files or directories between local and remote using rsync over SSH on the named server. Each of source and destination must carry a local: or remote: prefix and one side must be local and the other remote; with no prefix it assumes a push from local to remote. Mutates the destination. Setting delete true removes destination files absent from source, which is destructive; dryRun true previews without changing anything. Compression is on by default. Password authentication requires sshpass installed locally. Blocked on readonly or restricted servers. Timeout defaults to 30000 ms.',
+    description: 'Synchronizes files or directories between local and remote using rsync over SSH on the named server. Each of source and destination must carry a local: or remote: prefix and one side must be local and the other remote; with no prefix it assumes a push from local to remote. Mutates the destination. Setting delete true removes destination files absent from source, which is destructive; dryRun true previews without changing anything. Compression is on by default. Password authentication requires sshpass installed locally. Blocked on readonly or restricted servers. Timeout defaults to 60000 ms.',
     inputSchema: {
       server: z.string().describe('Server name from configuration'),
       source: z.string().describe('Source path (use "local:" or "remote:" prefix)'),
@@ -892,10 +892,10 @@ registerToolConditional(
       compress: z.boolean().optional().describe('Compress during transfer'),
       verbose: z.boolean().optional().describe('Show detailed progress'),
       checksum: z.boolean().optional().describe('Use checksum instead of timestamp for comparison'),
-      timeout: z.number().optional().describe('Timeout in milliseconds (default: 30000)')
+      timeout: z.number().optional().describe('Timeout in milliseconds (default: 60000)')
     }
   },
-  async ({ server: serverName, source, destination, exclude = [], dryRun = false, delete: deleteFiles = false, compress = true, verbose = false, checksum = false, timeout = 30000 }) => {
+  async ({ server: serverName, source, destination, exclude = [], dryRun = false, delete: deleteFiles = false, compress = true, verbose = false, checksum = false, timeout = 60000 }) => {
     const denied = await applyServerPolicy(serverName, 'ssh_sync', { source, destination, dryRun, delete: deleteFiles });
     if (denied) return denied;
 
@@ -990,14 +990,14 @@ registerToolConditional(
       if (serverConfig.keyPath) {
         sshOptions.push('-o BatchMode=yes');           // No password prompts
         sshOptions.push('-o StrictHostKeyChecking=accept-new'); // Accept new keys, reject changed ones
-        sshOptions.push('-o ConnectTimeout=10');        // Connection timeout
+        sshOptions.push('-o ConnectTimeout=20');        // Connection timeout
 
         const keyPath = serverConfig.keyPath.replace('~', os.homedir());
         sshOptions.push(`-i ${keyPath}`);
       } else {
         // With sshpass, we don't use BatchMode
         sshOptions.push('-o StrictHostKeyChecking=accept-new'); // Accept new keys, reject changed ones
-        sshOptions.push('-o ConnectTimeout=10');
+        sshOptions.push('-o ConnectTimeout=20');
       }
 
       if (serverConfig.port && serverConfig.port !== '22') {
@@ -1251,7 +1251,7 @@ registerToolConditional(
 
       const tailServers = await loadServerConfig();
       const tailServerConfig = tailServers[serverName.toLowerCase()];
-      const result = await execCommandWithTimeout(ssh, command, { platform: tailServerConfig?.platform }, 15000);
+      const result = await execCommandWithTimeout(ssh, command, { platform: tailServerConfig?.platform }, 30000);
 
       if (result.code !== 0) {
         throw new Error(result.stderr || 'Failed to tail file');
@@ -1362,7 +1362,7 @@ registerToolConditional(
 
       for (const [key, cmd] of Object.entries(commands)) {
         try {
-          const result = await execCommandWithTimeout(ssh, cmd, { platform: monServerConfig?.platform }, 10000);
+          const result = await execCommandWithTimeout(ssh, cmd, { platform: monServerConfig?.platform }, 20000);
           if (result.code === 0) {
             output[key] = result.stdout.trim();
           } else {
@@ -1616,14 +1616,14 @@ registerToolConditional(
 registerToolConditional(
   'ssh_session_send',
   {
-    description: 'Runs one command inside an already-open session identified by its session ID, reusing the persisted working directory, environment, and history of that shell. Mutates remote state like any shell command and is not idempotent; cd and export update the saved context for subsequent calls. Commands run through a bash-style shell (Unix-oriented). The security policy of the underlying server is enforced, so readonly or restricted servers may refuse. Default timeout is 30000 ms.',
+    description: 'Runs one command inside an already-open session identified by its session ID, reusing the persisted working directory, environment, and history of that shell. Mutates remote state like any shell command and is not idempotent; cd and export update the saved context for subsequent calls. Commands run through a bash-style shell (Unix-oriented). The security policy of the underlying server is enforced, so readonly or restricted servers may refuse. Default timeout is 60000 ms.',
     inputSchema: {
       session: z.string().describe('Session ID from ssh_session_start'),
       command: z.string().describe('Command to execute in the session'),
-      timeout: z.number().optional().describe('Command timeout in milliseconds (default: 30000)')
+      timeout: z.number().optional().describe('Command timeout in milliseconds (default: 60000)')
     }
   },
-  async ({ session: sessionId, command, timeout = 30000 }) => {
+  async ({ session: sessionId, command, timeout = 60000 }) => {
     try {
       const session = getSession(sessionId);
 
@@ -1845,7 +1845,7 @@ function formatDuration(seconds) {
 registerToolConditional(
   'ssh_execute_group',
   {
-    description: 'Runs one command on every server belonging to the named group and returns a per-server success or failure report. Mutates remote state on each member and is not idempotent. Best-effort: the security policy of each server is evaluated independently, so readonly or restricted members are reported as failed without aborting the rest unless stopOnError is set. Strategy may be parallel, sequential, or rolling (delay applies between servers). Per-server timeout is 30000 ms; cwd defaults to the configured default directory.',
+    description: 'Runs one command on every server belonging to the named group and returns a per-server success or failure report. Mutates remote state on each member and is not idempotent. Best-effort: the security policy of each server is evaluated independently, so readonly or restricted members are reported as failed without aborting the rest unless stopOnError is set. Strategy may be parallel, sequential, or rolling (delay applies between servers). Per-server timeout is 60000 ms; cwd defaults to the configured default directory.',
     inputSchema: {
       group: z.string().describe('Group name (e.g., "production", "staging", "all")'),
       command: z.string().describe('Command to execute'),
@@ -1880,7 +1880,7 @@ registerToolConditional(
           const platform = serverConfig?.platform || 'linux';
           const fullCommand = buildWorkingCommand(command, cwd, serverConfig);
 
-          const execResult = await execCommandWithTimeout(ssh, fullCommand, { platform }, 30000);
+          const execResult = await execCommandWithTimeout(ssh, fullCommand, { platform }, 60000);
 
           return {
             stdout: execResult.stdout,
@@ -2183,7 +2183,7 @@ registerToolConditional(
         for (const step of strategy.steps) {
           const command = step.command.replace('{{tempFile}}', tempFile);
 
-          const result = await execCommandWithTimeout(ssh, command, { platform: deployServerConfig?.platform }, 15000);
+          const result = await execCommandWithTimeout(ssh, command, { platform: deployServerConfig?.platform }, 30000);
 
           if (result.code !== 0 && step.type !== 'backup') {
             throw new Error(`${step.type} failed: ${result.stderr}`);
@@ -2233,16 +2233,16 @@ registerToolConditional(
 registerToolConditional(
   'ssh_execute_sudo',
   {
-    description: 'Runs a command with elevated privileges via sudo on the named server and returns the exit code and output. Prepends sudo when absent. If a password is given, or a sudo password is configured for the server, it is piped to sudo -S and masked in the returned output. Mutates remote state and can be destructive. Honors the cwd parameter or the server default directory and adapts to Linux or Windows. Timeout defaults to 30000 ms. Blocked entirely in readonly mode; in restricted mode the command must satisfy the allow and deny patterns.',
+    description: 'Runs a command with elevated privileges via sudo on the named server and returns the exit code and output. Prepends sudo when absent. If a password is given, or a sudo password is configured for the server, it is piped to sudo -S and masked in the returned output. Mutates remote state and can be destructive. Honors the cwd parameter or the server default directory and adapts to Linux or Windows. Timeout defaults to 60000 ms. Blocked entirely in readonly mode; in restricted mode the command must satisfy the allow and deny patterns.',
     inputSchema: {
       server: z.string().describe('Server name or alias'),
       command: z.string().describe('Command to execute with sudo'),
       password: z.string().optional().describe('Sudo password (will be masked in output)'),
       cwd: z.string().optional().describe('Working directory'),
-      timeout: z.number().optional().describe('Command timeout in milliseconds (default: 30000)')
+      timeout: z.number().optional().describe('Command timeout in milliseconds (default: 60000)')
     }
   },
-  async ({ server, command, password, cwd, timeout = 30000 }) => {
+  async ({ server, command, password, cwd, timeout = 60000 }) => {
     // ssh_execute_sudo is in READONLY_BLOCKED_TOOLS, so readonly mode blocks
     // it at the tool level. In restricted mode the command itself is matched
     // against ALLOW/DENY patterns.
@@ -4869,7 +4869,7 @@ registerToolConditional(
       const tempSsh = new SSHManager({ host, user, port, password });
       try {
         await tempSsh.connect();
-        const result = await tempSsh.execCommand(installCmd, { timeout: 30000 });
+        const result = await tempSsh.execCommand(installCmd, { timeout: 60000 });
         if (result.code !== 0) {
           throw new Error(result.stderr || result.stdout || 'unknown error');
         }
@@ -4923,7 +4923,7 @@ registerToolConditional(
     if (test_connection) {
       try {
         const ssh = await getConnection(name.toLowerCase());
-        const result = await ssh.execCommand('echo "connection_ok"', { timeout: 15000 });
+        const result = await ssh.execCommand('echo "connection_ok"', { timeout: 30000 });
         testResult = { success: result.code === 0, output: result.stdout.trim() };
       } catch (error) {
         testResult = { success: false, error: error.message };
@@ -5002,7 +5002,7 @@ async function main() {
   console.error(`📦 Profile: ${activeProfile}`);
   console.error(`🖥️  Available servers: ${serverList.length > 0 ? serverList.join(', ') : 'none configured'}`);
   console.error('💡 Use .env, TOML, or the ssh-manager CLI to configure servers');
-  console.error('🔄 Connection management: Auto-reconnect enabled, 30min timeout');
+  console.error('🔄 Connection management: Auto-reconnect enabled, 60min timeout');
 
   // Set up periodic cleanup of old connections (every 10 minutes).
   // unref() so this timer alone never keeps the process alive after the

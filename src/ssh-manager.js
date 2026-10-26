@@ -52,7 +52,7 @@ class SSHManager {
         host: this.config.host,
         port: this.config.port || 22,
         username: this.config.user,
-        readyTimeout: 60000, // Increased from 20000 to 60000 for slow connections
+        readyTimeout: 120000, // Increased from 20000 to 120000 for slow connections
         keepaliveInterval: 10000,
         algorithms: {
           kex: [
@@ -76,12 +76,14 @@ class SSHManager {
             'aes256-gcm',
           ],
           serverHostKey: [
+            // Match ssh2's secure default order. This also keeps the key used
+            // by a normal connection aligned with ssh_key_manage's probe.
+            'ssh-ed25519',
             'ecdsa-sha2-nistp256',
             'ecdsa-sha2-nistp384',
             'ecdsa-sha2-nistp521',
             'rsa-sha2-512',
-            'rsa-sha2-256',
-            'ssh-ed25519',
+            'rsa-sha2-256'
           ],
           hmac: [
             'hmac-sha2-256-etm@openssh.com',
@@ -141,7 +143,7 @@ class SSHManager {
       throw new Error('Not connected to SSH server');
     }
 
-    const { timeout = 30000, cwd, rawCommand = false } = options;
+    const { timeout = 60000, cwd, rawCommand = false } = options;
     const fullCommand = (cwd && !rawCommand) ? `cd ${cwd} && ${command}` : command;
 
     return new Promise((resolve, reject) => {
@@ -319,7 +321,7 @@ class SSHManager {
     // Method 1: Try getent (most reliable)
     try {
       const result = await this.execCommand('getent passwd $USER | cut -d: -f6', {
-        timeout: 5000,
+        timeout: 10000,
         rawCommand: true
       });
       homeDir = result.stdout.trim();
@@ -334,7 +336,7 @@ class SSHManager {
     // Method 2: Try env -i to get clean HOME
     try {
       const result = await this.execCommand('env -i HOME=$HOME bash -c "echo $HOME"', {
-        timeout: 5000,
+        timeout: 10000,
         rawCommand: true
       });
       homeDir = result.stdout.trim();
@@ -349,7 +351,7 @@ class SSHManager {
     // Method 3: Parse /etc/passwd directly
     try {
       const result = await this.execCommand('grep "^$USER:" /etc/passwd | cut -d: -f6', {
-        timeout: 5000,
+        timeout: 10000,
         rawCommand: true
       });
       homeDir = result.stdout.trim();
@@ -364,7 +366,7 @@ class SSHManager {
     // Method 4: Last resort - try cd ~ && pwd
     try {
       const result = await this.execCommand('cd ~ && pwd', {
-        timeout: 5000,
+        timeout: 10000,
         rawCommand: true
       });
       homeDir = result.stdout.trim();
@@ -523,7 +525,7 @@ class SSHManager {
       // literally (outputs `"ping"`), which broke the strict equality check and
       // marked healthy Windows/OpenSSH sessions as dead. Output handling lives
       // in isPingAlive() so it can be unit-tested without a live connection.
-      const result = await this.execCommand('echo ping', { timeout: 5000 });
+      const result = await this.execCommand('echo ping', { timeout: 10000 });
       return isPingAlive(result.stdout);
     } catch (error) {
       return false;

@@ -526,7 +526,7 @@ export function closeServerTunnels(serverName) {
  */
 function monitorTunnels() {
   const now = Date.now();
-  const healthTimeout = 60 * 1000; // 1 minute
+  const healthTimeout = 120 * 1000; // 2 minutes
 
   for (const [id, tunnel] of tunnels.entries()) {
     if (tunnel.state === TUNNEL_STATES.ACTIVE) {
